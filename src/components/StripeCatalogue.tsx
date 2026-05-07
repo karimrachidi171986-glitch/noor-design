@@ -3,6 +3,8 @@ import { motion, AnimatePresence } from 'motion/react';
 import { ShoppingCart, Loader2, CreditCard, ShieldCheck, Upload, Trash, Plus, X, FileCheck } from 'lucide-react';
 import { Product, PRODUCTS } from '../constants';
 
+import { getAuthToken } from '../lib/auth';
+
 interface StripeCatalogueProps {
   isAdmin?: boolean;
 }
@@ -182,8 +184,12 @@ export default function ProductCatalogue({ isAdmin }: StripeCatalogueProps) {
     formData.append('file', file);
 
     try {
+      const token = getAuthToken();
       const response = await fetch('/api/upload-file', {
         method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        },
         body: formData,
       });
       const data = await response.json();
@@ -212,8 +218,12 @@ export default function ProductCatalogue({ isAdmin }: StripeCatalogueProps) {
     formData.append('image', file);
 
     try {
+      const token = getAuthToken();
       const response = await fetch('/api/upload-image', {
         method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        },
         body: formData,
       });
       const data = await response.json();

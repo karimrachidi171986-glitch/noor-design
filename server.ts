@@ -1,13 +1,38 @@
-import express from "express";
+import express, { Request, Response, NextFunction } from "express";
 import { createServer as createViteServer } from "vite";
 import path from "path";
 import { fileURLToPath } from "url";
 import Stripe from "stripe";
 import multer from "multer";
 import fs from "fs";
+import jwt from "jsonwebtoken";
+import bcrypt from "bcryptjs";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+const JWT_SECRET = process.env.JWT_SECRET || "noor-design-secret-key-2024";
+const ADMIN_USERNAME = process.env.ADMIN_USERNAME || "admin";
+// Default password is "admin123" hashed. User should update this in .env
+const ADMIN_PASSWORD_HASH = process.env.ADMIN_PASSWORD_HASH || "$2a$10$zR8V0lR.w6kCgJqR/fRjR.rZ3X9ZlX9ZlX9ZlX9ZlX9ZlX9ZlX9Zl";
+
+// Middleware to authenticate JWT
+interface AuthRequest extends Request {
+  user?: any;
+}
+
+const authenticateToken = (req: AuthRequest, res: Response, next: NextFunction) => {
+  const authHeader = req.headers['authorization'];
+  const token = authHeader && authHeader.split(' ')[1];
+
+  if (!token) return res.status(401).json({ error: "Unauthorized" });
+
+  jwt.verify(token, JWT_SECRET, (err: any, user: any) => {
+    if (err) return res.status(403).json({ error: "Forbidden" });
+    req.user = user;
+    next();
+  });
+};
 
 // Ensure upload directories exist
 const publicDir = path.join(process.cwd(), "public");
@@ -63,24 +88,50 @@ async function startServer() {
 
   app.use(express.json());
 
-  // Image Upload Endpoint
-  app.post("/api/upload-image", uploadImg.single("image"), (req, res) => {
+  // Admin Login Endpoint
+  app.post("/api/admin/login", async (req, res) => {
+    const { username, password } = req.body;
+
+    if (username !== ADMIN_USERNAME) {
+      return res.status(401).json({ error: "Invalid credentials" });
+    }
+
+    try {
+      const isMatch = await bcrypt.compare(password, ADMIN_PASSWORD_HASH);
+      if (!isMatch) {
+        return res.status(401).json({ error: "Invalid credentials" });
+      }
+
+      const token = jwt.sign({ username }, JWT_SECRET, { expiresIn: '24h' });
+      res.json({ token });
+    } catch (error) {
+      res.status(500).json({ error: "Server error" });
+    }
+  });
+
+  // Verify Token Endpoint
+  app.get("/api/admin/verify", authenticateToken, (req, res) => {
+    res.json({ valid: true });
+  });
+
+  // Image Upload Endpoint (Protected)
+  app.post("/api/upload-image", authenticateToken, uploadImg.single("image"), (req, res) => {
     if (!req.file) {
       return res.status(400).json({ error: "No image uploaded" });
     }
     res.json({ filePath: `/uploads/${req.file.filename}` });
   });
 
-  // STL/General File Upload Endpoint
-  app.post("/api/upload-file", uploadFile.single("file"), (req, res) => {
+  // STL/General File Upload Endpoint (Protected)
+  app.post("/api/upload-file", authenticateToken, uploadFile.single("file"), (req, res) => {
     if (!req.file) {
       return res.status(400).json({ error: "No file uploaded" });
     }
     res.json({ filePath: `/files/${req.file.filename}` });
   });
 
-  // STL Upload (Backward Compatibility)
-  app.post("/api/upload-stl", uploadFile.single("stlFile"), (req, res) => {
+  // STL Upload (Backward Compatibility) (Protected)
+  app.post("/api/upload-stl", authenticateToken, uploadFile.single("stlFile"), (req, res) => {
     if (!req.file) {
       return res.status(400).json({ error: "No file uploaded" });
     }

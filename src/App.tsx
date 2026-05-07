@@ -11,23 +11,50 @@ import FacebookPixel from './components/FacebookPixel';
 import ProductCatalogue from './components/StripeCatalogue';
 import CheckoutSuccess from './components/CheckoutSuccess';
 import CheckoutCancel from './components/CheckoutCancel';
+import AdminLogin from './components/AdminLogin';
+import { verifyAdmin, removeAuthToken } from './lib/auth';
 import { motion, useScroll, useSpring } from 'motion/react';
 import { useState, useEffect } from 'react';
 
 export default function App() {
   const [isAdmin, setIsAdmin] = useState(false);
-  const [currentPage, setCurrentPage] = useState<'home' | 'success' | 'cancel'>('home');
+  const [currentPage, setCurrentPage] = useState<'home' | 'success' | 'cancel' | 'admin'>('home');
+  const [isLoadingAuth, setIsLoadingAuth] = useState(true);
 
   useEffect(() => {
+    const checkAuth = async () => {
+      const isAuth = await verifyAdmin();
+      setIsAdmin(isAuth);
+      setIsLoadingAuth(false);
+    };
+
     const path = window.location.pathname;
     if (path === '/success') {
       setCurrentPage('success');
+      setIsLoadingAuth(false);
     } else if (path === '/cancel') {
       setCurrentPage('cancel');
+      setIsLoadingAuth(false);
+    } else if (path === '/admin') {
+      setCurrentPage('admin');
+      checkAuth();
     } else {
       setCurrentPage('home');
+      checkAuth();
     }
   }, []);
+
+  const handleLoginSuccess = () => {
+    setIsAdmin(true);
+    setCurrentPage('home');
+    window.location.href = '/'; // Back to home as admin
+  };
+
+  const handleLogout = () => {
+    removeAuthToken();
+    setIsAdmin(false);
+    window.location.href = '/';
+  };
 
   const { scrollYProgress } = useScroll();
   const scaleX = useSpring(scrollYProgress, {
@@ -43,12 +70,24 @@ export default function App() {
 
   const [sheetUrl, setSheetUrl] = useState(() => localStorage.getItem('noor-sheet-url') || '');
 
+  if (isLoadingAuth) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[#f9f9f9]">
+        <div className="w-12 h-12 border-4 border-noor-gold/20 border-t-noor-gold rounded-full animate-spin" />
+      </div>
+    );
+  }
+
   if (currentPage === 'success') {
     return <CheckoutSuccess />;
   }
 
   if (currentPage === 'cancel') {
     return <CheckoutCancel />;
+  }
+
+  if (currentPage === 'admin' && !isAdmin) {
+    return <AdminLogin onLoginSuccess={handleLoginSuccess} />;
   }
 
   const handleSaveSheetUrl = (url: string) => {
@@ -78,6 +117,17 @@ export default function App() {
         <div className="absolute inset-0 bg-white/30" />
       </div>
 
+      {isAdmin && (
+        <div className="fixed top-4 right-4 z-[100]">
+          <button 
+            onClick={handleLogout}
+            className="px-6 py-2 bg-noor-bronze text-white text-[10px] font-bold uppercase tracking-widest rounded-full shadow-lg hover:bg-noor-gold transition-all"
+          >
+            Déconnexion Admin
+          </button>
+        </div>
+      )}
+
       {/* Custom Progress Bar */}
       <motion.div
         className="fixed top-0 left-0 right-0 h-1 bg-noor-gold z-[60] origin-left"
@@ -89,7 +139,9 @@ export default function App() {
         currentLogo={logo} 
         onLogoChange={handleSaveLogo}
         isAdmin={isAdmin}
-        onAdminToggle={() => setIsAdmin(!isAdmin)}
+        onAdminToggle={() => {
+          if (!isAdmin) window.location.href = '/admin';
+        }}
       />
       
       <main className="space-y-32">
