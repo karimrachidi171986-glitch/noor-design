@@ -12,9 +12,9 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const JWT_SECRET = process.env.JWT_SECRET || "noor-design-secret-key-2024";
-const ADMIN_USERNAME = process.env.ADMIN_USERNAME || "admin";
-// Default password is "admin123" hashed. User should update this in .env
-const ADMIN_PASSWORD_HASH = process.env.ADMIN_PASSWORD_HASH || "$2a$10$zR8V0lR.w6kCgJqR/fRjR.rZ3X9ZlX9ZlX9ZlX9ZlX9ZlX9ZlX9Zl";
+const ADMIN_USERNAME = process.env.ADMIN_USERNAME || "karim";
+// Default password is "karimdoha@123" hashed. User should update this in .env
+const ADMIN_PASSWORD_HASH = process.env.ADMIN_PASSWORD_HASH || "$2b$10$oZ6KJp7HLSSJpm0pGNfRQuvsEVjgBmNmgY1E0Ua.VHscM06lCeMma";
 
 // Middleware to authenticate JWT
 interface AuthRequest extends Request {

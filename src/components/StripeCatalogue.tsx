@@ -165,7 +165,8 @@ export default function ProductCatalogue({ isAdmin }: StripeCatalogueProps) {
     document.body.appendChild(form);
     
     // Store product info for the success page to read after redirect
-    sessionStorage.setItem('last_purchase', JSON.stringify({
+    // Use localStorage instead of sessionStorage because PayPal return opens in a different session/tab context
+    localStorage.setItem('last_purchase', JSON.stringify({
       name: product.name,
       category: product.category,
       downloadUrl: (product.category === 'stl' && product.name.toLowerCase().includes('aurora')) ? '/files/aurora.stl' : (product.stlFilePath || '')

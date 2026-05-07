@@ -13,8 +13,8 @@ export default function CheckoutSuccess() {
     const category = query.get('category');
     const downloadUrl = query.get('downloadUrl');
 
-    // Try URL params first, then session storage
-    const savedPurchase = sessionStorage.getItem('last_purchase');
+    // Try URL params first, then local storage
+    const savedPurchase = localStorage.getItem('last_purchase');
     
     if (productId && name) {
       setProductInfo({
