@@ -66,17 +66,14 @@ const fileStorage = multer.diskStorage({
 const uploadImg = multer({ storage: imgStorage });
 const uploadFile = multer({ storage: fileStorage });
 
-async function startServer() {
+export async function createExpressApp() {
   const app = express();
-  const PORT = 3000;
-
+  
   // Lazy load Stripe
   let stripe: Stripe | null = null;
   const getStripe = () => {
     const key = process.env.STRIPE_SECRET_KEY;
     if (!key) {
-      // In development, handle missing key gracefully or use a placeholder
-      // For this app, we'll inform the user if it's missing on first use
       console.warn("STRIPE_SECRET_KEY is missing. Stripe features will fail.");
       return null;
     }
@@ -87,6 +84,10 @@ async function startServer() {
   };
 
   app.use(express.json());
+  
+  // Serve uploads and files explicitly so they work in both dev and prod
+  app.use("/uploads", express.static(uploadDir));
+  app.use("/files", express.static(filesDir));
 
   // Admin Login Endpoint
   app.post("/api/admin/login", async (req, res) => {
@@ -206,6 +207,19 @@ async function startServer() {
   app.get("/cancel.html", (req, res) => {
     res.redirect("/cancel");
   });
+
+  // PayPal IPN Listener
+  app.post("/api/ipn_listener", (req, res) => {
+    console.log("PayPal IPN received:", req.body);
+    res.status(200).send("OK");
+  });
+
+  return app;
+}
+
+async function startServer() {
+  const app = await createExpressApp();
+  const PORT = 3000;
 
   // Vite middleware for development
   if (process.env.NODE_ENV !== "production") {

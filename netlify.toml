@@ -1,15 +1,14 @@
 [build]
-  publish = "dist"
   command = "npm run build"
+  publish = "dist"
+
+[functions]
+  directory = "netlify/functions"
+  node_bundler = "esbuild"
 
 [[redirects]]
-  from = "/success"
-  to = "/index.html"
-  status = 200
-
-[[redirects]]
-  from = "/cancel"
-  to = "/index.html"
+  from = "/api/*"
+  to = "/.netlify/functions/api/:splat"
   status = 200
 
 [[redirects]]

@@ -63,7 +63,15 @@ export default function App() {
     restDelta: 0.001
   });
 
-  const [heroBg, setHeroBg] = useState<string | null>(null);
+  const [heroBg, setHeroBg] = useState<string | null>(() => {
+    return localStorage.getItem('noor-hero-bg');
+  });
+
+  const handleBgChange = (newBg: string) => {
+    setHeroBg(newBg);
+    localStorage.setItem('noor-hero-bg', newBg);
+  };
+
   const [logo, setLogo] = useState<string>(() => {
     return localStorage.getItem('noor-logo') || "https://instagram.fcmn1-1.fna.fbcdn.net/v/t51.82787-19/654232359_17905579212380582_7318363194633073419_n.jpg?efg=eyJ2ZW5jb2RlX3RhZyI6InByb2ZpbGVfcGljLmRqYW5nby43MjAuZXhwZXJpbWVudGFsIn0&_nc_ht=instagram.fcmn1-1.fna.fbcdn.net&_nc_cat=102&_nc_oc=Q6cZ2gE3vI0rC-LMYT9iWa83dccRk7ho1hrdETHZAp8YxT4cioVjDZ40byA4I4St0MsW39Y&_nc_ohc=kNA54N6cOs0Q7kNvwHLMs0b&_nc_gid=tIiNBa-UO5jIEvhrXc4lJQ&edm=AP4sbd4BAAAA&ccb=7-5&oh=00_Af7BSRtoRPlthSuhi8sCJeftQZrXOEL2WkGvMChJGNG1_Q&oe=69F98E67&_nc_sid=7a9f4b";
   });
@@ -135,7 +143,7 @@ export default function App() {
       />
 
       <Header 
-        onBgChange={setHeroBg} 
+        onBgChange={handleBgChange} 
         currentLogo={logo} 
         onLogoChange={handleSaveLogo}
         isAdmin={isAdmin}

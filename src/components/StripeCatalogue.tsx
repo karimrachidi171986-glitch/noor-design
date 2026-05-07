@@ -128,6 +128,7 @@ export default function ProductCatalogue({ isAdmin }: StripeCatalogueProps) {
   const handleBuyNow = (product: Product) => {
     const numericPrice = product.price.replace(/[^0-9.]/g, '');
     const businessEmail = product.stripePriceId || 'karimrachidi171986@gmail.com'; 
+    const origin = window.location.origin;
     
     // Exact PayPal Business parameters requested
     const paypalParams = {
@@ -136,9 +137,9 @@ export default function ProductCatalogue({ isAdmin }: StripeCatalogueProps) {
       item_name: product.name,
       amount: numericPrice,
       currency_code: 'EUR',
-      return: 'https://noordesign.ma/success.html',
-      cancel_return: 'https://noordesign.ma/cancel.html',
-      notify_url: 'https://noordesign.ma/ipn_listener.php',
+      return: `${origin}/success.html`,
+      cancel_return: `${origin}/cancel.html`,
+      notify_url: `${origin}/api/ipn_listener`, 
       charset: 'utf-8',
       // Enhancement parameters to show both "Connect" and "Pay by Card" options
       solution_type: 'Sole', 
