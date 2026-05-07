@@ -1,0 +1,162 @@
+/**
+ * @license
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+import Header from './components/Header';
+import Hero from './components/Hero';
+import About from './components/About';
+import Footer from './components/Footer';
+import FacebookPixel from './components/FacebookPixel';
+import ProductCatalogue from './components/StripeCatalogue';
+import CheckoutSuccess from './components/CheckoutSuccess';
+import CheckoutCancel from './components/CheckoutCancel';
+import { motion, useScroll, useSpring } from 'motion/react';
+import { useState, useEffect } from 'react';
+
+export default function App() {
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [currentPage, setCurrentPage] = useState<'home' | 'success' | 'cancel'>('home');
+
+  useEffect(() => {
+    const path = window.location.pathname;
+    if (path === '/success') {
+      setCurrentPage('success');
+    } else if (path === '/cancel') {
+      setCurrentPage('cancel');
+    } else {
+      setCurrentPage('home');
+    }
+  }, []);
+
+  const { scrollYProgress } = useScroll();
+  const scaleX = useSpring(scrollYProgress, {
+    stiffness: 100,
+    damping: 30,
+    restDelta: 0.001
+  });
+
+  const [heroBg, setHeroBg] = useState<string | null>(null);
+  const [logo, setLogo] = useState<string>(() => {
+    return localStorage.getItem('noor-logo') || "https://instagram.fcmn1-1.fna.fbcdn.net/v/t51.82787-19/654232359_17905579212380582_7318363194633073419_n.jpg?efg=eyJ2ZW5jb2RlX3RhZyI6InByb2ZpbGVfcGljLmRqYW5nby43MjAuZXhwZXJpbWVudGFsIn0&_nc_ht=instagram.fcmn1-1.fna.fbcdn.net&_nc_cat=102&_nc_oc=Q6cZ2gE3vI0rC-LMYT9iWa83dccRk7ho1hrdETHZAp8YxT4cioVjDZ40byA4I4St0MsW39Y&_nc_ohc=kNA54N6cOs0Q7kNvwHLMs0b&_nc_gid=tIiNBa-UO5jIEvhrXc4lJQ&edm=AP4sbd4BAAAA&ccb=7-5&oh=00_Af7BSRtoRPlthSuhi8sCJeftQZrXOEL2WkGvMChJGNG1_Q&oe=69F98E67&_nc_sid=7a9f4b";
+  });
+
+  const [sheetUrl, setSheetUrl] = useState(() => localStorage.getItem('noor-sheet-url') || '');
+
+  if (currentPage === 'success') {
+    return <CheckoutSuccess />;
+  }
+
+  if (currentPage === 'cancel') {
+    return <CheckoutCancel />;
+  }
+
+  const handleSaveSheetUrl = (url: string) => {
+    setSheetUrl(url);
+    localStorage.setItem('noor-sheet-url', url);
+    window.location.reload(); // Reload to apply new sheet URL
+  };
+
+  const handleSaveLogo = (newLogo: string) => {
+    setLogo(newLogo);
+    localStorage.setItem('noor-logo', newLogo);
+  };
+
+  const defaultBg = "https://images.unsplash.com/photo-1618221195710-dd6b41faaea6?auto=format&fit=crop&q=80&w=2000";
+
+  return (
+    <div className="relative min-h-screen overflow-x-hidden">
+      <FacebookPixel />
+      {/* Global Background Image with Overlay */}
+      <div className="fixed inset-0 -z-10">
+        <img 
+          src={heroBg || defaultBg} 
+          alt="Background" 
+          className="w-full h-full object-cover opacity-40 transition-all duration-1000"
+          referrerPolicy="no-referrer"
+        />
+        <div className="absolute inset-0 bg-white/30" />
+      </div>
+
+      {/* Custom Progress Bar */}
+      <motion.div
+        className="fixed top-0 left-0 right-0 h-1 bg-noor-gold z-[60] origin-left"
+        style={{ scaleX }}
+      />
+
+      <Header 
+        onBgChange={setHeroBg} 
+        currentLogo={logo} 
+        onLogoChange={handleSaveLogo}
+        isAdmin={isAdmin}
+        onAdminToggle={() => setIsAdmin(!isAdmin)}
+      />
+      
+      <main className="space-y-32">
+        <Hero bgImage={heroBg} logo={logo} />
+        
+        {/* Decorative Divider */}
+        <div className="max-w-7xl mx-auto px-6">
+          <div className="h-px w-full bg-noor-bronze/10" />
+        </div>
+
+        {isAdmin && (
+          <div className="max-w-xl mx-auto px-6 mt-12">
+            <div className="bg-white/80 backdrop-blur-md p-6 rounded-3xl border border-noor-gold/20 shadow-xl">
+              <h3 className="text-sm font-bold uppercase tracking-widest text-noor-gold mb-4">Configuration Google Sheet</h3>
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-[10px] font-bold text-noor-bronze/40 uppercase mb-2">URL du CSV publié</label>
+                  <input 
+                    type="text" 
+                    value={sheetUrl}
+                    onChange={(e) => setSheetUrl(e.target.value)}
+                    placeholder="https://docs.google.com/spreadsheets/d/e/.../pub?output=csv"
+                    className="w-full p-4 bg-white/50 border border-noor-bronze/10 rounded-2xl text-xs focus:ring-2 focus:ring-noor-gold/20 outline-none transition-all"
+                  />
+                </div>
+                <button 
+                  onClick={() => handleSaveSheetUrl(sheetUrl)}
+                  className="w-full py-4 bg-noor-gold text-white rounded-2xl text-xs font-bold tracking-widest uppercase hover:bg-noor-bronze transition-all"
+                >
+                  Enregistrer & Actualiser
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        <div id="catalogue">
+          <ProductCatalogue isAdmin={isAdmin} />
+        </div>
+        
+        <div id="about">
+          <About />
+        </div>
+        
+        {/* Instagram/Showcase Section (Quick filler) */}
+        <section className="py-32 px-6 max-w-7xl mx-auto text-center border-t border-noor-bronze/5">
+          <div className="max-w-xl mx-auto space-y-6">
+            <h2 className="text-3xl font-serif text-noor-bronze">Inspiration Quotidienne</h2>
+            <p className="text-noor-bronze/60 font-light">
+              Suivez-nous sur les réseaux pour découvrir nos dernières installations chez nos clients 
+              et nos nouveaux designs exclusifs.
+            </p>
+            <div className="pt-4">
+              <a 
+                href="https://www.instagram.com/noor3dart/" 
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-2 text-noor-gold font-bold tracking-widest uppercase text-xs border-b border-noor-gold pb-1 hover:text-noor-bronze hover:border-noor-bronze transition-all"
+              >
+                Suivre sur Instagram
+              </a>
+            </div>
+          </div>
+        </section>
+      </main>
+
+      <Footer currentLogo={logo} />
+    </div>
+  );
+}
