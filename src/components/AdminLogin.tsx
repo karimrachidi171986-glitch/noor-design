@@ -18,8 +18,9 @@ export default function AdminLogin({ onLoginSuccess }: AdminLoginProps) {
     setError('');
 
     try {
-      console.log("Tentative de connexion à /api/login...");
-      const response = await fetch('/api/login', {
+      console.log("Tentative de connexion au service d'authentification...");
+      // Using the direct Netlify function path for better reliability
+      const response = await fetch('/.netlify/functions/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ username, password })
@@ -34,11 +35,16 @@ export default function AdminLogin({ onLoginSuccess }: AdminLoginProps) {
         onLoginSuccess();
       } else {
         console.error("Échec de la connexion:", data.error || 'Statut ' + response.status);
-        setError(data.error === "Invalid credentials" ? "Identifiants incorrects" : (data.error || `Erreur ${response.status}`));
+        // Specifically check for 401 to show credentials error
+        if (response.status === 401) {
+          setError('Identifiants incorrects');
+        } else {
+          setError(data.error || `Erreur ${response.status}`);
+        }
       }
     } catch (err) {
       console.error("Erreur réseau ou serveur détaillée:", err);
-      setError('Impossible de contacter le serveur (Backend non disponible)');
+      setError('Impossible de contacter le serveur');
     } finally {
       setLoading(false);
     }
