@@ -5,6 +5,8 @@ import { Product, PRODUCTS } from '../constants';
 
 import { getAuthToken } from '../lib/auth';
 
+import PayPalButton from './PayPalButton';
+
 interface StripeCatalogueProps {
   isAdmin?: boolean;
 }
@@ -27,6 +29,30 @@ const ProductCard: React.FC<ProductCardProps> = ({
   onDelete, 
   loadingId 
 }) => {
+  const [showPayPal, setShowPayPal] = useState(false);
+
+  // Success handler for PayPal
+  const handlePayPalSuccess = (details: any) => {
+    console.log('Payment Successful:', details);
+    
+    // Store purchase info for success page
+    localStorage.setItem('last_purchase', JSON.stringify({
+      name: product.name,
+      category: product.category,
+      downloadUrl: (product.category === 'stl' && product.name.toLowerCase().includes('aurora')) ? '/files/aurora.stl' : (product.stlFilePath || '')
+    }));
+
+    // Redirect to success page
+    window.location.href = `/success?order_id=${details.id}&name=${encodeURIComponent(product.name)}&category=${product.category}`;
+  };
+
+  const handlePayPalError = (error: any) => {
+    console.error('PayPal Error:', error);
+    alert('Une erreur est survenue lors du paiement. Veuillez réessayer.');
+  };
+
+  const amountStr = product.price.replace(/[^0-9.]/g, '') || "20.00";
+
   return (
     <motion.div
       layout
@@ -85,22 +111,33 @@ const ProductCard: React.FC<ProductCardProps> = ({
           {product.description}
         </p>
 
-        <motion.button
-          whileHover={{ scale: 1.02 }}
-          whileTap={{ scale: 0.98 }}
-          onClick={() => onBuy(product)}
-          disabled={loadingId === product.id}
-          className="w-full flex items-center justify-center gap-3 py-5 bg-[#0070ba] text-white rounded-2xl text-xs font-bold tracking-widest uppercase shadow-lg shadow-blue-500/10 hover:bg-[#003087] transition-colors relative overflow-hidden"
-        >
-          {loadingId === product.id ? (
-            <Loader2 className="w-5 h-5 animate-spin" />
-          ) : (
-            <>
-              <CreditCard className="w-4 h-4" />
-              {product.category === 'stl' ? 'Payer via PayPal' : 'Payer l\'Oeuvre'}
-            </>
-          )}
-        </motion.button>
+        {!showPayPal ? (
+          <motion.button
+            whileHover={{ scale: 1.02 }}
+            whileTap={{ scale: 0.98 }}
+            onClick={() => setShowPayPal(true)}
+            className="w-full flex items-center justify-center gap-3 py-5 bg-[#0070ba] text-white rounded-2xl text-xs font-bold tracking-widest uppercase shadow-lg shadow-blue-500/10 hover:bg-[#003087] transition-colors relative overflow-hidden"
+          >
+            <CreditCard className="w-4 h-4" />
+            {product.category === 'stl' ? 'Acheter STL' : 'Acheter l’Oeuvre'}
+          </motion.button>
+        ) : (
+          <div className="space-y-4">
+            <PayPalButton 
+              amount={amountStr}
+              itemName={product.name}
+              onSuccess={handlePayPalSuccess}
+              onError={handlePayPalError}
+              onCancel={() => setShowPayPal(false)}
+            />
+            <button 
+              onClick={() => setShowPayPal(false)}
+              className="w-full text-[10px] font-bold text-noor-bronze/40 uppercase tracking-widest hover:text-noor-bronze transition-colors"
+            >
+              Annuler
+            </button>
+          </div>
+        )}
         
         <div className="flex items-center justify-center gap-4 text-[9px] text-noor-bronze/30 font-medium tracking-tighter uppercase">
           <span className="flex items-center gap-1"><ShieldCheck className="w-3 h-3" /> Paiement Sécurisé</span>

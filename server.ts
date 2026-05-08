@@ -248,6 +248,99 @@ export async function createExpressApp() {
     res.status(200).send("OK");
   });
 
+  // --- PayPal REST API Implementation ---
+  const PAYPAL_API = process.env.PAYPAL_MODE === "live" 
+    ? "https://api-m.paypal.com" 
+    : "https://api-m.sandbox.paypal.com";
+
+  const getPayPalAccessToken = async () => {
+    const clientID = process.env.PAYPAL_CLIENT_ID;
+    const clientSecret = process.env.PAYPAL_CLIENT_SECRET;
+
+    if (!clientID || !clientSecret) {
+      throw new Error("PAYPAL_CLIENT_ID or PAYPAL_CLIENT_SECRET is missing in environment variables.");
+    }
+
+    const auth = Buffer.from(clientID + ":" + clientSecret).toString("base64");
+
+    const response = await fetch(`${PAYPAL_API}/v1/oauth2/token`, {
+      method: "POST",
+      body: "grant_type=client_credentials",
+      headers: {
+        Authorization: `Basic ${auth}`,
+      },
+    });
+
+    const data = await response.json();
+    return data.access_token;
+  };
+
+  app.post("/api/paypal/create-order", async (req, res) => {
+    try {
+      const { amount, currency_code, itemName } = req.body;
+      const accessToken = await getPayPalAccessToken();
+      
+      const response = await fetch(`${PAYPAL_API}/v2/checkout/orders`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${accessToken}`,
+        },
+        body: JSON.stringify({
+          intent: "CAPTURE",
+          purchase_units: [
+            {
+              amount: {
+                currency_code: currency_code || "EUR",
+                value: amount || "20.00",
+              },
+              description: itemName || "NoorDesign Panel",
+            },
+          ],
+          application_context: {
+            return_url: "https://noordesign.ma/success.html",
+            cancel_url: "https://noordesign.ma/cancel.html",
+          },
+        }),
+      });
+
+      const order = await response.json();
+      
+      if (order.name === "INVALID_REQUEST" || order.name === "VALIDATION_ERROR") {
+        return res.status(400).json({ 
+          error: "PayPal Input Error", 
+          details: order.details 
+        });
+      }
+
+      res.json(order);
+    } catch (error: any) {
+      console.error("PayPal Create Order Error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/paypal/capture-order", async (req, res) => {
+    try {
+      const { orderID } = req.body;
+      const accessToken = await getPayPalAccessToken();
+
+      const response = await fetch(`${PAYPAL_API}/v2/checkout/orders/${orderID}/capture`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${accessToken}`,
+        },
+      });
+
+      const data = await response.json();
+      res.json(data);
+    } catch (error: any) {
+      console.error("PayPal Capture Order Error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   return app;
 }
 
