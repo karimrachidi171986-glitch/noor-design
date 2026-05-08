@@ -8,6 +8,9 @@ import fs from "fs";
 import jwt from "jsonwebtoken";
 import bcrypt from "bcryptjs";
 import cors from "cors";
+import dotenv from "dotenv";
+
+dotenv.config();
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -35,16 +38,22 @@ const authenticateToken = (req: AuthRequest, res: Response, next: NextFunction) 
   });
 };
 
-// Ensure upload directories exist
 const publicDir = path.join(process.cwd(), "public");
 const uploadDir = path.join(publicDir, "uploads");
 const filesDir = path.join(publicDir, "files");
 
-[uploadDir, filesDir].forEach(dir => {
-  if (!fs.existsSync(dir)) {
-    fs.mkdirSync(dir, { recursive: true });
+// Ensure upload directories exist safely
+const ensureDirectories = () => {
+  try {
+    [uploadDir, filesDir].forEach(dir => {
+      if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir, { recursive: true });
+      }
+    });
+  } catch (err) {
+    console.warn("Could not create/check directories, might be in a read-only environment:", err);
   }
-});
+};
 
 // Multer config for images
 const imgStorage = multer.diskStorage({
@@ -69,6 +78,7 @@ const uploadFile = multer({ storage: fileStorage });
 
 export async function createExpressApp() {
   const app = express();
+  ensureDirectories();
   
   // Enable CORS
   app.use(cors());
@@ -89,6 +99,11 @@ export async function createExpressApp() {
 
   app.use(express.json());
   
+  // Health check
+  app.get("/api/health", (req, res) => {
+    res.json({ status: "ok", message: "API is running" });
+  });
+
   // Serve uploads and files explicitly so they work in both dev and prod
   app.use("/uploads", express.static(uploadDir));
   app.use("/files", express.static(filesDir));
@@ -260,4 +275,11 @@ async function startServer() {
   });
 }
 
-startServer();
+// Only start the server if we are not in a serverless environment like Netlify
+// or if we are explicitly running the server locally/in AI Studio
+const isLocal = !process.env.NETLIFY;
+const isMain = import.meta.url.includes(path.basename(process.argv[1] || ''));
+
+if (isLocal) {
+  startServer();
+}

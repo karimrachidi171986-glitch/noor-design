@@ -18,22 +18,27 @@ export default function AdminLogin({ onLoginSuccess }: AdminLoginProps) {
     setError('');
 
     try {
+      console.log("Tentative de connexion à /api/login...");
       const response = await fetch('/api/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ username, password })
       });
 
+      console.log("Réponse reçue, statut:", response.status);
+      
       const data = await response.json();
 
       if (response.ok) {
         setAuthToken(data.token);
         onLoginSuccess();
       } else {
-        setError(data.error || 'Invalid credentials');
+        console.error("Échec de la connexion:", data.error || 'Statut ' + response.status);
+        setError(data.error === "Invalid credentials" ? "Identifiants incorrects" : (data.error || `Erreur ${response.status}`));
       }
     } catch (err) {
-      setError('Erreur de connexion au serveur');
+      console.error("Erreur réseau ou serveur détaillée:", err);
+      setError('Impossible de contacter le serveur (Backend non disponible)');
     } finally {
       setLoading(false);
     }
