@@ -7,7 +7,6 @@ import Header from './components/Header';
 import Hero from './components/Hero';
 import About from './components/About';
 import Footer from './components/Footer';
-import FacebookPixel from './components/FacebookPixel';
 import ProductCatalogue from './components/StripeCatalogue';
 import CheckoutSuccess from './components/CheckoutSuccess';
 import CheckoutCancel from './components/CheckoutCancel';
@@ -113,7 +112,6 @@ export default function App() {
 
   return (
     <div className="relative min-h-screen overflow-x-hidden">
-      <FacebookPixel />
       {/* Global Background Image with Overlay */}
       <div className="fixed inset-0 -z-10">
         <img 
