@@ -18,7 +18,7 @@ export default function AdminLogin({ onLoginSuccess }: AdminLoginProps) {
     setError('');
 
     try {
-      const response = await fetch('/api/admin/login', {
+      const response = await fetch('/api/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ username, password })
@@ -30,7 +30,7 @@ export default function AdminLogin({ onLoginSuccess }: AdminLoginProps) {
         setAuthToken(data.token);
         onLoginSuccess();
       } else {
-        setError(data.error || 'Identifiants invalides');
+        setError(data.error || 'Invalid credentials');
       }
     } catch (err) {
       setError('Erreur de connexion au serveur');

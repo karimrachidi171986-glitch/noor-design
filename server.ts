@@ -7,6 +7,7 @@ import multer from "multer";
 import fs from "fs";
 import jwt from "jsonwebtoken";
 import bcrypt from "bcryptjs";
+import cors from "cors";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -69,6 +70,9 @@ const uploadFile = multer({ storage: fileStorage });
 export async function createExpressApp() {
   const app = express();
   
+  // Enable CORS
+  app.use(cors());
+
   // Lazy load Stripe
   let stripe: Stripe | null = null;
   const getStripe = () => {
@@ -89,7 +93,22 @@ export async function createExpressApp() {
   app.use("/uploads", express.static(uploadDir));
   app.use("/files", express.static(filesDir));
 
-  // Admin Login Endpoint
+  // Secure Login endpoint requested: sends "valid-token" logic
+  app.post("/api/login", (req, res) => {
+    const { username, password } = req.body;
+    
+    // Explicit check as requested
+    if (username === "karim" && password === "karimdoha@123") {
+      // We will actually return a real JWT token so the rest of the app's security works,
+      // but satisfying the requested JSON structure.
+      const token = jwt.sign({ username }, JWT_SECRET, { expiresIn: '24h' });
+      return res.json({ token: token, message: "Login success" });
+    } else {
+      return res.status(401).json({ error: "Invalid credentials" });
+    }
+  });
+
+  // Admin Login Endpoint (Standard JWT)
   app.post("/api/admin/login", async (req, res) => {
     const { username, password } = req.body;
 
