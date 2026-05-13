@@ -9,8 +9,31 @@ import jwt from "jsonwebtoken";
 import bcrypt from "bcryptjs";
 import cors from "cors";
 import dotenv from "dotenv";
+import helmet from "helmet";
+import DOMPurify from "isomorphic-dompurify";
 
 dotenv.config();
+
+// Sanitization helper
+const sanitize = (input: any, key?: string): any => {
+  // Skip sensitive fields that might have special characters (liike passwords)
+  if (key === "password" || key === "token") return input;
+
+  if (typeof input === "string") {
+    return DOMPurify.sanitize(input, { ALLOWED_TAGS: [], ALLOWED_ATTR: [] });
+  }
+  if (Array.isArray(input)) {
+    return input.map((item) => sanitize(item));
+  }
+  if (typeof input === "object" && input !== null) {
+    const sanitized: any = {};
+    for (const k in input) {
+      sanitized[k] = sanitize(input[k], k);
+    }
+    return sanitized;
+  }
+  return input;
+};
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -80,6 +103,24 @@ export async function createExpressApp() {
   const app = express();
   ensureDirectories();
   
+  // Security Headers
+  app.use(helmet({
+    contentSecurityPolicy: {
+      directives: {
+        defaultSrc: ["'self'"],
+        scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'", "https://connect.facebook.net", "https://www.paypal.com", "https://www.googletagmanager.com"],
+        styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
+        imgSrc: ["'self'", "data:", "https://www.facebook.com", "https://instagram.fcmn1-1.fna.fbcdn.net", "https://images.unsplash.com", "https://www.paypalobjects.com"],
+        connectSrc: ["'self'", "https://www.paypal.com", "https://www.google-analytics.com", "https://stats.g.doubleclick.net"],
+        fontSrc: ["'self'", "https://fonts.gstatic.com"],
+        objectSrc: ["'none'"],
+        upgradeInsecureRequests: [],
+      },
+    },
+    referrerPolicy: { policy: "strict-origin-when-cross-origin" },
+    crossOriginEmbedderPolicy: false, // Often blocks external images if not configured
+  }));
+  
   // Enable CORS
   app.use(cors());
 
@@ -98,6 +139,14 @@ export async function createExpressApp() {
   };
 
   app.use(express.json());
+  
+  // Sanitization Middleware
+  app.use((req, res, next) => {
+    if (req.body) {
+      req.body = sanitize(req.body);
+    }
+    next();
+  });
   
   // Health check
   app.get("/api/health", (req, res) => {

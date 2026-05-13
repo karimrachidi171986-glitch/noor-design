@@ -4,6 +4,11 @@ import { ShoppingCart, Loader2, CreditCard, ShieldCheck, Upload, Trash, Plus, X,
 import { Product, PRODUCTS } from '../constants';
 
 import { getAuthToken } from '../lib/auth';
+import DOMPurify from 'isomorphic-dompurify';
+
+const sanitize = (input: string): string => {
+  return DOMPurify.sanitize(input, { ALLOWED_TAGS: [], ALLOWED_ATTR: [] });
+};
 
 import PayPalButton from './PayPalButton';
 
@@ -296,10 +301,20 @@ export default function ProductCatalogue({ isAdmin }: StripeCatalogueProps) {
   const handleEditSave = (e: React.FormEvent) => {
     e.preventDefault();
     if (editingProduct) {
-      if (products.find(p => p.id === editingProduct.id)) {
-        setProducts(products.map(p => p.id === editingProduct.id ? editingProduct : p));
+      const sanitizedProduct = {
+        ...editingProduct,
+        name: sanitize(editingProduct.name),
+        description: sanitize(editingProduct.description),
+        price: sanitize(editingProduct.price),
+        dimensions: editingProduct.dimensions ? sanitize(editingProduct.dimensions) : '',
+        imageUrl: sanitize(editingProduct.imageUrl),
+        stripePriceId: sanitize(editingProduct.stripePriceId || ''),
+      };
+
+      if (products.find(p => p.id === sanitizedProduct.id)) {
+        setProducts(products.map(p => p.id === sanitizedProduct.id ? sanitizedProduct : p));
       } else {
-        setProducts([editingProduct, ...products]);
+        setProducts([sanitizedProduct, ...products]);
       }
       setEditingProduct(null);
     }
