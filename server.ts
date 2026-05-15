@@ -87,6 +87,14 @@ const imgStorage = multer.diskStorage({
   }
 });
 
+const imgFilter = (req: any, file: any, cb: any) => {
+  if (file.mimetype === "image/jpeg" || file.mimetype === "image/png" || file.mimetype === "image/jpg") {
+    cb(null, true);
+  } else {
+    cb(new Error("Format de fichier non supporté. Seuls JPG et PNG sont acceptés."), false);
+  }
+};
+
 // Multer config for files (STL, etc)
 const fileStorage = multer.diskStorage({
   destination: (req, file, cb) => cb(null, filesDir),
@@ -96,7 +104,11 @@ const fileStorage = multer.diskStorage({
   }
 });
 
-const uploadImg = multer({ storage: imgStorage });
+const uploadImg = multer({ 
+  storage: imgStorage,
+  fileFilter: imgFilter,
+  limits: { fileSize: 5 * 1024 * 1024 } // 5MB limit
+});
 const uploadFile = multer({ storage: fileStorage });
 
 export async function createExpressApp() {
@@ -199,11 +211,19 @@ export async function createExpressApp() {
   });
 
   // Image Upload Endpoint (Protected)
-  app.post("/api/upload-image", authenticateToken, uploadImg.single("image"), (req, res) => {
-    if (!req.file) {
-      return res.status(400).json({ error: "No image uploaded" });
-    }
-    res.json({ filePath: `/uploads/${req.file.filename}` });
+  app.post("/api/upload-image", authenticateToken, (req, res) => {
+    uploadImg.single("image")(req, res, (err) => {
+      if (err instanceof multer.MulterError) {
+        return res.status(400).json({ error: `Erreur Multer: ${err.message}` });
+      } else if (err) {
+        return res.status(400).json({ error: err.message });
+      }
+
+      if (!req.file) {
+        return res.status(400).json({ error: "Aucune image téléchargée" });
+      }
+      res.json({ filePath: `/uploads/${req.file.filename}` });
+    });
   });
 
   // STL/General File Upload Endpoint (Protected)

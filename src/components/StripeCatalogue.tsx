@@ -162,6 +162,14 @@ export default function ProductCatalogue({ isAdmin }: StripeCatalogueProps) {
   const [loadingId, setLoadingId] = useState<string | null>(null);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [uploadProgress, setUploadProgress] = useState(false);
+  const [uploadMessage, setUploadMessage] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
+
+  useEffect(() => {
+    if (uploadMessage) {
+      const timer = setTimeout(() => setUploadMessage(null), 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [uploadMessage]);
 
   useEffect(() => {
     localStorage.setItem('noor-stripe-products', JSON.stringify(products));
@@ -270,14 +278,18 @@ export default function ProductCatalogue({ isAdmin }: StripeCatalogueProps) {
         },
         body: formData,
       });
+      
+      if (!response.ok) throw new Error('Upload failed');
+      
       const data = await response.json();
       
       if (data.filePath && editingProduct) {
         setEditingProduct({ ...editingProduct, imageUrl: data.filePath });
+        setUploadMessage({ text: 'Image uploadée avec succès ✅', type: 'success' });
       }
     } catch (err) {
       console.error('Image upload failed:', err);
-      alert('Échec de l\'upload de l\'image');
+      setUploadMessage({ text: 'Échec de l\'upload de l\'image', type: 'error' });
     } finally {
       setUploadProgress(false);
     }
@@ -497,7 +509,7 @@ export default function ProductCatalogue({ isAdmin }: StripeCatalogueProps) {
                         <div className="relative">
                           <input 
                             type="file" 
-                            accept="image/*"
+                            accept=".jpg,.jpeg,.png"
                             onChange={handleImageUpload}
                             className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
                             id="image-upload"
@@ -507,9 +519,14 @@ export default function ProductCatalogue({ isAdmin }: StripeCatalogueProps) {
                             className="inline-flex items-center gap-2 px-4 py-2 bg-noor-bronze text-white rounded-lg text-[10px] font-bold tracking-widest uppercase hover:bg-noor-gold transition-all cursor-pointer"
                           >
                             <Upload className="w-3 h-3" />
-                            Télécharger depuis mon PC
+                            Télécharger (JPG/PNG)
                           </label>
                         </div>
+                        {uploadMessage && (
+                          <p className={`text-[10px] font-bold ${uploadMessage.type === 'success' ? 'text-green-500' : 'text-red-500'} animate-fade-in`}>
+                            {uploadMessage.text}
+                          </p>
+                        )}
                       </div>
                     </div>
                   </div>
