@@ -31,8 +31,16 @@ const PayPalButton: React.FC<PayPalButtonProps> = ({
       paypalRef.current.innerHTML = '';
       
       window.paypal.Buttons({
+        style: {
+          layout: 'vertical',
+          color: 'blue',
+          shape: 'rect',
+          label: 'pay',
+          tagline: false
+        },
         createOrder: async () => {
           try {
+            console.log('Initiating PayPal order for:', amount, currency, itemName);
             const response = await fetch('/api/paypal/create-order', {
               method: 'POST',
               headers: {
@@ -44,10 +52,17 @@ const PayPalButton: React.FC<PayPalButtonProps> = ({
                 itemName,
               }),
             });
+            
+            if (!response.ok) {
+              const errorData = await response.json();
+              throw new Error(errorData.error || 'Failed to create order');
+            }
+            
             const order = await response.json();
             return order.id;
           } catch (err) {
             console.error('Error creating PayPal order:', err);
+            onError(err);
             throw err;
           }
         },
@@ -62,12 +77,17 @@ const PayPalButton: React.FC<PayPalButtonProps> = ({
                 orderID: data.orderID,
               }),
             });
+            
+            if (!response.ok) {
+              const errorData = await response.json();
+              throw new Error(errorData.error || 'Failed to capture order');
+            }
+            
             const details = await response.json();
             
             if (details.status === 'COMPLETED') {
               onSuccess(details);
             } else {
-              // Handle cases where status is not completed yet
               onError(details);
             }
           } catch (err) {

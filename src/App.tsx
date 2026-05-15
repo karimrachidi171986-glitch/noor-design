@@ -17,13 +17,19 @@ import { useState, useEffect } from 'react';
 
 export default function App() {
   const [isAdmin, setIsAdmin] = useState(false);
-  const [currentPage, setCurrentPage] = useState<'home' | 'success' | 'cancel' | 'admin'>('home');
+  const [currentPage, setCurrentPage] = useState<'home' | 'success' | 'cancel' | 'admin' | 'dashboard'>('home');
   const [isLoadingAuth, setIsLoadingAuth] = useState(true);
 
   useEffect(() => {
     const checkAuth = async () => {
       const isAuth = await verifyAdmin();
       setIsAdmin(isAuth);
+      
+      const path = window.location.pathname;
+      if (isAuth && (path === '/admin' || path === '/admin-login')) {
+        window.location.href = '/admin-dashboard';
+      }
+      
       setIsLoadingAuth(false);
     };
 
@@ -37,6 +43,9 @@ export default function App() {
     } else if (path === '/admin') {
       setCurrentPage('admin');
       checkAuth();
+    } else if (path === '/admin-dashboard') {
+      setCurrentPage('dashboard');
+      checkAuth();
     } else {
       setCurrentPage('home');
       checkAuth();
@@ -45,8 +54,8 @@ export default function App() {
 
   const handleLoginSuccess = () => {
     setIsAdmin(true);
-    setCurrentPage('home');
-    window.location.href = '/'; // Back to home as admin
+    setCurrentPage('dashboard');
+    window.location.href = '/admin-dashboard';
   };
 
   const handleLogout = () => {
@@ -94,6 +103,10 @@ export default function App() {
   }
 
   if (currentPage === 'admin' && !isAdmin) {
+    return <AdminLogin onLoginSuccess={handleLoginSuccess} />;
+  }
+
+  if (currentPage === 'dashboard' && !isAdmin) {
     return <AdminLogin onLoginSuccess={handleLoginSuccess} />;
   }
 
@@ -146,7 +159,11 @@ export default function App() {
         onLogoChange={handleSaveLogo}
         isAdmin={isAdmin}
         onAdminToggle={() => {
-          if (!isAdmin) window.location.href = '/admin';
+          if (!isAdmin) {
+            window.location.href = '/admin-dashboard';
+          } else {
+            handleLogout();
+          }
         }}
       />
       

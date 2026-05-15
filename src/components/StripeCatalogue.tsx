@@ -5,6 +5,7 @@ import { Product, PRODUCTS } from '../constants';
 
 import { getAuthToken } from '../lib/auth';
 import DOMPurify from 'isomorphic-dompurify';
+import { loadStripe } from '@stripe/stripe-js';
 
 const sanitize = (input: string): string => {
   return DOMPurify.sanitize(input, { ALLOWED_TAGS: [], ALLOWED_ATTR: [] });
@@ -34,11 +35,14 @@ const ProductCard: React.FC<ProductCardProps> = ({
   onDelete, 
   loadingId 
 }) => {
-  const [showPayPal, setShowPayPal] = useState(false);
+  const [showPaymentOptions, setShowPaymentOptions] = useState(false);
+  const [isStripeLoading, setIsStripeLoading] = useState(false);
+  const [isCMILoading, setIsCMILoading] = useState(false);
 
   // Success handler for PayPal
   const handlePayPalSuccess = (details: any) => {
     console.log('Payment Successful:', details);
+    alert('✅ Paiement réussi');
     
     // Store purchase info for success page
     localStorage.setItem('last_purchase', JSON.stringify({
@@ -48,12 +52,97 @@ const ProductCard: React.FC<ProductCardProps> = ({
     }));
 
     // Redirect to success page
-    window.location.href = `/success?order_id=${details.id}&name=${encodeURIComponent(product.name)}&category=${product.category}`;
+    setTimeout(() => {
+      window.location.href = `/success?order_id=${details.id}&name=${encodeURIComponent(product.name)}&category=${product.category}`;
+    }, 1500);
+  };
+
+  const handleStripeCheckout = async () => {
+    setIsStripeLoading(true);
+    try {
+      const response = await fetch('/api/create-checkout-session', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          productId: product.id,
+          productName: product.name,
+          productPrice: product.price,
+          stlFilePath: product.stlFilePath,
+          category: product.category
+        }),
+      });
+
+      const session = await response.json();
+      if (session.url) {
+        // Redirect to Stripe Checkout
+        window.location.href = session.url;
+      } else {
+        throw new Error(session.error || 'Failed to create checkout session');
+      }
+    } catch (error) {
+      console.error('Stripe Error:', error);
+      alert('❌ Erreur de paiement Stripe');
+    } finally {
+      setIsStripeLoading(false);
+    }
+  };
+
+  const handleCMICheckout = async () => {
+    setIsCMILoading(true);
+    try {
+      const response = await fetch('/api/cmi/pay', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          amount: amountStr,
+          productName: product.name,
+          productId: product.id
+        }),
+      });
+
+      const data = await response.json();
+      if (data.url && data.params) {
+        // Store purchase info for success page locally as backup
+        localStorage.setItem('last_purchase', JSON.stringify({
+          name: product.name,
+          category: product.category,
+          downloadUrl: product.stlFilePath || ''
+        }));
+
+        // CMI requires a form POST redirect
+        const form = document.createElement('form');
+        form.method = 'POST';
+        form.action = data.url;
+        
+        Object.entries(data.params).forEach(([key, value]) => {
+          const input = document.createElement('input');
+          input.type = 'hidden';
+          input.name = key;
+          input.value = value as string;
+          form.appendChild(input);
+        });
+
+        document.body.appendChild(form);
+        form.submit();
+        document.body.removeChild(form);
+      } else {
+        throw new Error(data.error || 'Failed to initiate CMI payment');
+      }
+    } catch (error) {
+      console.error('CMI Error:', error);
+      alert('❌ Erreur de paiement CMI');
+    } finally {
+      setIsCMILoading(false);
+    }
   };
 
   const handlePayPalError = (error: any) => {
     console.error('PayPal Error:', error);
-    alert('Une erreur est survenue lors du paiement. Veuillez réessayer.');
+    alert('❌ Erreur de paiement');
   };
 
   const amountStr = product.price.replace(/[^0-9.]/g, '') || "20.00";
@@ -116,38 +205,66 @@ const ProductCard: React.FC<ProductCardProps> = ({
           {product.description}
         </p>
 
-        {!showPayPal ? (
+        {!showPaymentOptions ? (
           <motion.button
             whileHover={{ scale: 1.02 }}
             whileTap={{ scale: 0.98 }}
-            onClick={() => setShowPayPal(true)}
-            className="w-full flex items-center justify-center gap-3 py-5 bg-[#0070ba] text-white rounded-2xl text-xs font-bold tracking-widest uppercase shadow-lg shadow-blue-500/10 hover:bg-[#003087] transition-colors relative overflow-hidden"
+            onClick={() => setShowPaymentOptions(true)}
+            className="w-full flex items-center justify-center gap-3 py-5 bg-noor-bronze text-white rounded-2xl text-xs font-bold tracking-widest uppercase shadow-lg shadow-noor-bronze/10 hover:bg-noor-gold transition-colors relative overflow-hidden"
           >
-            <CreditCard className="w-4 h-4" />
+            <ShoppingCart className="w-4 h-4" />
             {product.category === 'stl' ? 'Acheter STL' : 'Acheter l’Oeuvre'}
           </motion.button>
         ) : (
           <div className="space-y-4">
+            <motion.button
+              whileHover={{ scale: 1.02 }}
+              whileTap={{ scale: 0.98 }}
+              onClick={handleStripeCheckout}
+              disabled={isStripeLoading || isCMILoading}
+              className="w-full flex items-center justify-center gap-3 py-4 bg-[#635bff] text-white rounded-xl text-[10px] font-bold tracking-widest uppercase hover:bg-opacity-90 transition-all disabled:opacity-50"
+            >
+              {isStripeLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <CreditCard className="w-4 h-4" />}
+              Payer par Carte (Stripe)
+            </motion.button>
+
+            <motion.button
+              whileHover={{ scale: 1.02 }}
+              whileTap={{ scale: 0.98 }}
+              onClick={handleCMICheckout}
+              disabled={isStripeLoading || isCMILoading}
+              className="w-full flex items-center justify-center gap-3 py-4 bg-emerald-600 text-white rounded-xl text-[10px] font-bold tracking-widest uppercase hover:bg-opacity-90 transition-all disabled:opacity-50"
+            >
+              {isCMILoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <CreditCard className="w-4 h-4" />}
+              Carte Marocaine (CMI)
+            </motion.button>
+
+            <div className="relative">
+              <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-gray-100"></div></div>
+              <div className="relative flex justify-center text-[8px] uppercase tracking-tighter"><span className="px-2 bg-white text-gray-300 font-bold">Ou via PayPal</span></div>
+            </div>
+
             <PayPalButton 
               amount={amountStr}
               itemName={product.name}
               onSuccess={handlePayPalSuccess}
               onError={handlePayPalError}
-              onCancel={() => setShowPayPal(false)}
+              onCancel={() => setShowPaymentOptions(false)}
             />
+            
             <button 
-              onClick={() => setShowPayPal(false)}
-              className="w-full text-[10px] font-bold text-noor-bronze/40 uppercase tracking-widest hover:text-noor-bronze transition-colors"
+              onClick={() => setShowPaymentOptions(false)}
+              className="w-full text-[10px] font-bold text-noor-bronze/40 uppercase tracking-widest hover:text-noor-bronze transition-colors flex items-center justify-center gap-1"
             >
-              Annuler
+              <X className="w-2 h-2" /> Retour
             </button>
           </div>
         )}
         
         <div className="flex items-center justify-center gap-4 text-[9px] text-noor-bronze/30 font-medium tracking-tighter uppercase">
-          <span className="flex items-center gap-1"><ShieldCheck className="w-3 h-3" /> Paiement Sécurisé</span>
+          <span className="flex items-center gap-1"><ShieldCheck className="w-3 h-3" /> Paiement Sécurisé SSL</span>
           <span>•</span>
-          <span>Lien {product.category === 'stl' ? 'immédiat' : 'de suivi'} après achat</span>
+          <span>Visa / Mastercard / PayPal</span>
         </div>
       </div>
     </motion.div>
@@ -438,11 +555,19 @@ export default function ProductCatalogue({ isAdmin }: StripeCatalogueProps) {
 
               <h3 className="text-3xl font-serif text-noor-bronze mb-10 italic">Configurer le produit</h3>
               
-              <form onSubmit={handleEditSave} className="grid grid-cols-1 md:grid-cols-2 gap-8">
+              <form 
+                onSubmit={handleEditSave} 
+                className="grid grid-cols-1 md:grid-cols-2 gap-8"
+                enctype="multipart/form-data"
+                data-netlify="true"
+                name="product-form"
+              >
+                <input type="hidden" name="form-name" value="product-form" />
                 <div className="col-span-2">
                   <label className="block text-[10px] font-bold tracking-widest uppercase text-noor-gold mb-3">Nom du produit</label>
                   <input
                     type="text"
+                    name="name"
                     value={editingProduct.name}
                     onChange={(e) => setEditingProduct({...editingProduct, name: e.target.value})}
                     className="w-full px-6 py-4 rounded-2xl border border-noor-bronze/10 focus:border-noor-gold outline-none text-noor-bronze font-serif italic text-lg"
@@ -453,6 +578,7 @@ export default function ProductCatalogue({ isAdmin }: StripeCatalogueProps) {
                 <div className="col-span-2">
                   <label className="block text-[10px] font-bold tracking-widest uppercase text-noor-gold mb-3">Description</label>
                   <textarea
+                    name="description"
                     value={editingProduct.description}
                     onChange={(e) => setEditingProduct({...editingProduct, description: e.target.value})}
                     className="w-full px-6 py-4 rounded-2xl border border-noor-bronze/10 focus:border-noor-gold outline-none text-noor-bronze text-sm h-32 resize-none"
@@ -464,6 +590,7 @@ export default function ProductCatalogue({ isAdmin }: StripeCatalogueProps) {
                   <label className="block text-[10px] font-bold tracking-widest uppercase text-noor-gold mb-3">Prix (Affichage)</label>
                   <input
                     type="text"
+                    name="price"
                     value={editingProduct.price}
                     onChange={(e) => setEditingProduct({...editingProduct, price: e.target.value})}
                     className="w-full px-6 py-4 rounded-2xl border border-noor-bronze/10 focus:border-noor-gold outline-none text-noor-bronze"
@@ -475,6 +602,7 @@ export default function ProductCatalogue({ isAdmin }: StripeCatalogueProps) {
                   <label className="block text-[10px] font-bold tracking-widest uppercase text-noor-gold mb-3">Email PayPal Business (Récepteur)</label>
                   <input
                     type="text"
+                    name="stripePriceId"
                     value={editingProduct.stripePriceId || 'karimrachidi171986@gmail.com'}
                     onChange={(e) => setEditingProduct({...editingProduct, stripePriceId: e.target.value})}
                     className="w-full px-6 py-4 rounded-2xl border border-noor-bronze/10 focus:border-noor-gold outline-none text-noor-bronze text-sm"
@@ -502,30 +630,36 @@ export default function ProductCatalogue({ isAdmin }: StripeCatalogueProps) {
                         <input
                           type="text"
                           value={editingProduct.imageUrl}
-                          onChange={(e) => setEditingProduct({...editingProduct, imageUrl: e.target.value})}
-                          className="w-full px-4 py-2 rounded-xl border border-noor-bronze/10 focus:border-noor-gold outline-none text-noor-bronze text-[10px] bg-white"
-                          placeholder="URL de l'image (ou téléchargez ci-dessous)"
+                          readOnly
+                          className="w-full px-4 py-2 rounded-xl border border-noor-bronze/10 focus:border-noor-gold outline-none text-noor-bronze text-[10px] bg-white/50"
+                          placeholder="Le lien de l'image s'affichera ici"
                         />
                         <div className="relative">
                           <input 
                             type="file" 
-                            accept=".jpg,.jpeg,.png"
+                            name="image"
+                            accept="image/png, image/jpeg"
                             onChange={handleImageUpload}
                             className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
                             id="image-upload"
+                            required={!editingProduct.imageUrl}
                           />
                           <label 
                             htmlFor="image-upload"
                             className="inline-flex items-center gap-2 px-4 py-2 bg-noor-bronze text-white rounded-lg text-[10px] font-bold tracking-widest uppercase hover:bg-noor-gold transition-all cursor-pointer"
                           >
                             <Upload className="w-3 h-3" />
-                            Télécharger (JPG/PNG)
+                            {uploadProgress ? 'Téléchargement...' : 'Télécharger (JPG/PNG)'}
                           </label>
                         </div>
                         {uploadMessage && (
-                          <p className={`text-[10px] font-bold ${uploadMessage.type === 'success' ? 'text-green-500' : 'text-red-500'} animate-fade-in`}>
+                          <motion.p 
+                            initial={{ opacity: 0, x: -10 }}
+                            animate={{ opacity: 1, x: 0 }}
+                            className={`text-[11px] font-bold ${uploadMessage.type === 'success' ? 'text-green-600' : 'text-red-500'} flex items-center gap-1`}
+                          >
                             {uploadMessage.text}
-                          </p>
+                          </motion.p>
                         )}
                       </div>
                     </div>
@@ -535,6 +669,7 @@ export default function ProductCatalogue({ isAdmin }: StripeCatalogueProps) {
                 <div className="col-span-2 md:col-span-1">
                   <label className="block text-[10px] font-bold tracking-widest uppercase text-noor-gold mb-3">Catégorie</label>
                   <select
+                    name="category"
                     value={editingProduct.category}
                     onChange={(e) => setEditingProduct({...editingProduct, category: e.target.value as any})}
                     className="w-full px-6 py-4 rounded-2xl border border-noor-bronze/10 focus:border-noor-gold outline-none text-noor-bronze bg-transparent"
@@ -548,6 +683,7 @@ export default function ProductCatalogue({ isAdmin }: StripeCatalogueProps) {
                   <label className="block text-[10px] font-bold tracking-widest uppercase text-noor-gold mb-3">Dimensions (Optionnel)</label>
                   <input
                     type="text"
+                    name="dimensions"
                     value={editingProduct.dimensions || ''}
                     onChange={(e) => setEditingProduct({...editingProduct, dimensions: e.target.value})}
                     className="w-full px-6 py-4 rounded-2xl border border-noor-bronze/10 focus:border-noor-gold outline-none text-noor-bronze"

@@ -19,8 +19,8 @@ export default function AdminLogin({ onLoginSuccess }: AdminLoginProps) {
 
     try {
       console.log("Tentative de connexion au service d'authentification...");
-      // Using the direct Netlify function path for better reliability
-      const response = await fetch('/.netlify/functions/login', {
+      // Using the Express API endpoint
+      const response = await fetch('/api/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ username, password })
@@ -37,7 +37,7 @@ export default function AdminLogin({ onLoginSuccess }: AdminLoginProps) {
         console.error("Échec de la connexion:", data.error || 'Statut ' + response.status);
         // Specifically check for 401 to show credentials error
         if (response.status === 401) {
-          setError('Identifiants incorrects');
+          setError('❌ Identifiants invalides');
         } else {
           setError(data.error || `Erreur ${response.status}`);
         }
@@ -62,11 +62,13 @@ export default function AdminLogin({ onLoginSuccess }: AdminLoginProps) {
           <p className="text-xs text-noor-bronze/40 uppercase tracking-widest font-bold">Sécurisé par JWT</p>
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-6">
+        <form onSubmit={handleSubmit} className="space-y-6" data-netlify="true" name="admin-login">
+          <input type="hidden" name="form-name" value="admin-login" />
           <div>
             <label className="block text-[10px] font-bold text-noor-gold uppercase mb-2 tracking-widest">Utilisateur</label>
             <input 
               type="text" 
+              name="username"
               value={username}
               onChange={(e) => setUsername(e.target.value)}
               className="w-full p-4 bg-gray-50 border border-gray-100 rounded-2xl text-sm outline-none focus:ring-2 focus:ring-noor-gold/10 transition-all font-sans"
@@ -77,6 +79,7 @@ export default function AdminLogin({ onLoginSuccess }: AdminLoginProps) {
             <label className="block text-[10px] font-bold text-noor-gold uppercase mb-2 tracking-widest">Mot de passe</label>
             <input 
               type="password" 
+              name="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               className="w-full p-4 bg-gray-50 border border-gray-100 rounded-2xl text-sm outline-none focus:ring-2 focus:ring-noor-gold/10 transition-all font-sans"

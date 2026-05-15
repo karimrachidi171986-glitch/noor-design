@@ -10,7 +10,7 @@ export default function CheckoutCancel() {
         className="max-w-md w-full bg-white p-12 rounded-[2.5rem] shadow-xl border border-gray-100"
       >
         <div className="text-4xl mb-6">⚠️</div>
-        <h2 className="text-[#333] text-2xl font-bold mb-4">Paiement annulé</h2>
+        <h2 className="text-[#333] text-2xl font-bold mb-4">❌ Paiement annulé</h2>
         <p className="text-gray-600 mb-8 leading-relaxed">
           Le paiement a été annulé. Veuillez réessayer ou retourner à la boutique si vous avez changé d'avis.
         </p>

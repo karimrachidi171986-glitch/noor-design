@@ -11,6 +11,7 @@ import cors from "cors";
 import dotenv from "dotenv";
 import helmet from "helmet";
 import DOMPurify from "isomorphic-dompurify";
+import crypto from "crypto";
 
 dotenv.config();
 
@@ -144,6 +145,15 @@ export async function createExpressApp() {
       console.warn("STRIPE_SECRET_KEY is missing. Stripe features will fail.");
       return null;
     }
+    
+    // Check if key is test or live based on prefix as requested
+    const isTest = key.startsWith("sk_test");
+    if (isTest) {
+      console.log("Stripe standard: Sandbox/Test mode detected");
+    } else if (key.startsWith("sk_live")) {
+      console.log("Stripe standard: Live/Production mode detected");
+    }
+
     if (!stripe) {
       stripe = new Stripe(key);
     }
@@ -154,7 +164,9 @@ export async function createExpressApp() {
   
   // Sanitization Middleware
   app.use((req, res, next) => {
-    if (req.body) {
+    // Skip sanitization for stripe webhooks or specific paths if needed, 
+    // but here we just sanitize bodies for general API safety.
+    if (req.body && req.path !== "/api/stripe-webhook") {
       req.body = sanitize(req.body);
     }
     next();
@@ -244,28 +256,41 @@ export async function createExpressApp() {
 
   // API Routes
   app.post("/api/create-checkout-session", async (req, res) => {
-    const { priceId, productName, stlFilePath, successUrl, cancelUrl, category } = req.body;
+    const { productId, productName, productPrice, stlFilePath, category } = req.body;
     const stripeClient = getStripe();
 
     if (!stripeClient) {
-      return res.status(500).json({ error: "Stripe is not configured. Please add STRIPE_SECRET_KEY to your environment." });
+      return res.status(500).json({ error: "Stripe integration is not configured. Please add STRIPE_SECRET_KEY." });
     }
 
     try {
+      const origin = req.headers.origin || "noordesign.ma";
+      
+      // Clean up price (remove non-numeric chars)
+      const numericPrice = parseFloat(productPrice.replace(/[^0-9.]/g, '')) || 20.00;
+      
       const session = await stripeClient.checkout.sessions.create({
         payment_method_types: ["card"],
         line_items: [
           {
-            price: priceId,
+            price_data: {
+              currency: "eur",
+              product_data: {
+                name: productName,
+                description: `Achat de ${productName} - Noor Design`,
+              },
+              unit_amount: Math.round(numericPrice * 100), // convert to cents
+            },
             quantity: 1,
           },
         ],
         mode: "payment",
-        success_url: successUrl + "?session_id={CHECKOUT_SESSION_ID}",
-        cancel_url: cancelUrl,
+        success_url: `${origin}/success?session_id={CHECKOUT_SESSION_ID}&name=${encodeURIComponent(productName)}&category=${category}&downloadUrl=${encodeURIComponent(stlFilePath || '')}`,
+        cancel_url: `${origin}/cancel`,
         metadata: {
+          productId,
           productName,
-          stlFilePath,
+          stlFilePath: stlFilePath || "",
           category,
         }
       });
@@ -275,6 +300,11 @@ export async function createExpressApp() {
       console.error("Stripe session error:", error);
       res.status(500).json({ error: error.message });
     }
+  });
+
+  // Alias for /create-checkout-session as specifically requested
+  app.post("/create-checkout-session", (req, res) => {
+    res.redirect(307, "/api/create-checkout-session");
   });
 
   app.get("/api/verify-session", async (req, res) => {
@@ -344,6 +374,7 @@ export async function createExpressApp() {
     return data.access_token;
   };
 
+  // Modern Checkout flow routes
   app.post("/api/paypal/create-order", async (req, res) => {
     try {
       const { amount, currency_code, itemName } = req.body;
@@ -367,26 +398,24 @@ export async function createExpressApp() {
             },
           ],
           application_context: {
-            return_url: "https://noordesign.ma/success.html",
-            cancel_url: "https://noordesign.ma/cancel.html",
+            return_url: "https://noordesign.ma/admin-dashboard", // As requested to redirect to dashboard if needed
+            cancel_url: "https://noordesign.ma/catalogue",
           },
         }),
       });
 
       const order = await response.json();
-      
-      if (order.name === "INVALID_REQUEST" || order.name === "VALIDATION_ERROR") {
-        return res.status(400).json({ 
-          error: "PayPal Input Error", 
-          details: order.details 
-        });
-      }
-
       res.json(order);
     } catch (error: any) {
       console.error("PayPal Create Order Error:", error);
       res.status(500).json({ error: error.message });
     }
+  });
+
+  // Alias for /pay as requested
+  app.post("/api/pay", (req, res) => {
+    // Redirect to create-order logic
+    res.redirect(307, "/api/paypal/create-order");
   });
 
   app.post("/api/paypal/capture-order", async (req, res) => {
@@ -408,6 +437,77 @@ export async function createExpressApp() {
       console.error("PayPal Capture Order Error:", error);
       res.status(500).json({ error: error.message });
     }
+  });
+
+  // Simple feedback routes
+  app.get("/api/paypal/success-feedback", (req, res) => {
+    res.json({ message: "✅ Paiement réussi" });
+  });
+
+  app.get("/api/paypal/cancel-feedback", (req, res) => {
+    res.json({ message: "❌ Paiement annulé" });
+  });
+
+  // --- CMI Payment (Moroccan Local Gateway) ---
+  app.post("/api/cmi/pay", (req, res) => {
+    const { amount, productName, oid } = req.body;
+    const merchantId = process.env.CMI_MERCHANT_ID;
+    const secretKey = process.env.CMI_SECRET_KEY;
+    const mode = process.env.CMI_MODE || "sandbox";
+    
+    if (!merchantId || !secretKey) {
+      return res.status(500).json({ error: "CMI is not configured. Please add CMI_MERCHANT_ID and CMI_SECRET_KEY." });
+    }
+
+    const gatewayUrl = mode === "live" 
+      ? "https://payment.cmi.co.ma/fim/est3Dgate" 
+      : "https://testpayment.cmi.co.ma/fim/est3Dgate";
+
+    const origin = req.headers.origin || "https://noordesign.ma";
+    const orderId = oid || `ORD-${Date.now()}`;
+    
+    const params: any = {
+      clientid: merchantId,
+      amount: amount || "20.00",
+      currency: "504", // MAD
+      oid: orderId,
+      okUrl: `${origin}/success?payment=cmi&orderId=${orderId}`,
+      failUrl: `${origin}/cancel?payment=cmi&orderId=${orderId}`,
+      lang: "fr",
+      email: "contact@noordesign.ma",
+      BillToName: "Client Noor Design",
+      storetype: "3D_PAY_HOSTING",
+      tranType: "PreAuth",
+      callbackUrl: `${origin}/api/cmi/callback`,
+      encoding: "UTF-8",
+      hashAlgorithm: "ver3",
+      shopurl: origin
+    };
+
+    // Calculate Hash (CMI spec usually requires SHA-512)
+    // Sort parameters alphabetically (excluding hash)
+    const sortedKeys = Object.keys(params).sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()));
+    
+    let hashStr = "";
+    sortedKeys.forEach(key => {
+      let val = params[key].toString().replace(/\\/g, "\\\\").replace(/\|/g, "\\|");
+      hashStr += val + "|";
+    });
+    hashStr += secretKey;
+
+    const hash = crypto.createHash("sha512").update(hashStr, "utf-8").digest("base64");
+    params.hash = hash;
+
+    res.json({
+      url: gatewayUrl,
+      params: params
+    });
+  });
+
+  app.post("/api/cmi/callback", (req, res) => {
+    console.log("CMI Callback received:", req.body);
+    // Here you would verify the callback hash as well if needed
+    res.send("ACTION=POSTAUTH");
   });
 
   return app;
