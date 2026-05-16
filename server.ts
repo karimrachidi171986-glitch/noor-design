@@ -89,10 +89,11 @@ const imgStorage = multer.diskStorage({
 });
 
 const imgFilter = (req: any, file: any, cb: any) => {
-  if (file.mimetype === "image/jpeg" || file.mimetype === "image/png" || file.mimetype === "image/jpg") {
+  const allowedMimes = ["image/jpeg", "image/png", "image/jpg", "image/webp", "image/gif"];
+  if (allowedMimes.includes(file.mimetype)) {
     cb(null, true);
   } else {
-    cb(new Error("Format de fichier non supporté. Seuls JPG et PNG sont acceptés."), false);
+    cb(new Error("Format de fichier non supporté. Seuls JPG, PNG, WEBP et GIF sont acceptés."), false);
   }
 };
 
@@ -225,15 +226,19 @@ export async function createExpressApp() {
   // Image Upload Endpoint (Protected)
   app.post("/api/upload-image", authenticateToken, (req, res) => {
     uploadImg.single("image")(req, res, (err) => {
-      if (err instanceof multer.MulterError) {
-        return res.status(400).json({ error: `Erreur Multer: ${err.message}` });
-      } else if (err) {
+      if (err) {
+        console.error("Multer upload error:", err);
+        if (err instanceof multer.MulterError) {
+          return res.status(400).json({ error: `Erreur de téléchargement: ${err.message}` });
+        }
         return res.status(400).json({ error: err.message });
       }
 
       if (!req.file) {
         return res.status(400).json({ error: "Aucune image téléchargée" });
       }
+
+      console.log("Image uploaded successfully:", req.file.filename);
       res.json({ filePath: `/uploads/${req.file.filename}` });
     });
   });

@@ -396,17 +396,19 @@ export default function ProductCatalogue({ isAdmin }: StripeCatalogueProps) {
         body: formData,
       });
       
-      if (!response.ok) throw new Error('Upload failed');
-      
       const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Upload failed');
+      }
       
       if (data.filePath && editingProduct) {
         setEditingProduct({ ...editingProduct, imageUrl: data.filePath });
         setUploadMessage({ text: 'Image uploadée avec succès ✅', type: 'success' });
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error('Image upload failed:', err);
-      setUploadMessage({ text: 'Échec de l\'upload de l\'image', type: 'error' });
+      setUploadMessage({ text: err.message === 'Upload failed' ? 'Échec de l\'upload de l\'image' : err.message, type: 'error' });
     } finally {
       setUploadProgress(false);
     }
