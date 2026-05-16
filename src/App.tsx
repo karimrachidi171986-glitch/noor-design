@@ -8,6 +8,7 @@ import Hero from './components/Hero';
 import About from './components/About';
 import Footer from './components/Footer';
 import ProductCatalogue from './components/StripeCatalogue';
+import MediaGallery from './components/MediaGallery';
 import CheckoutSuccess from './components/CheckoutSuccess';
 import CheckoutCancel from './components/CheckoutCancel';
 import AdminLogin from './components/AdminLogin';
@@ -203,6 +204,10 @@ export default function App() {
 
         <div id="catalogue">
           <ProductCatalogue isAdmin={isAdmin} />
+        </div>
+
+        <div id="galerie">
+          <MediaGallery />
         </div>
         
         <div id="about">
