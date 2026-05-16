@@ -85,8 +85,6 @@ export default function App() {
     return localStorage.getItem('noor-logo') || "https://instagram.fcmn1-1.fna.fbcdn.net/v/t51.82787-19/654232359_17905579212380582_7318363194633073419_n.jpg?efg=eyJ2ZW5jb2RlX3RhZyI6InByb2ZpbGVfcGljLmRqYW5nby43MjAuZXhwZXJpbWVudGFsIn0&_nc_ht=instagram.fcmn1-1.fna.fbcdn.net&_nc_cat=102&_nc_oc=Q6cZ2gE3vI0rC-LMYT9iWa83dccRk7ho1hrdETHZAp8YxT4cioVjDZ40byA4I4St0MsW39Y&_nc_ohc=kNA54N6cOs0Q7kNvwHLMs0b&_nc_gid=tIiNBa-UO5jIEvhrXc4lJQ&edm=AP4sbd4BAAAA&ccb=7-5&oh=00_Af7BSRtoRPlthSuhi8sCJeftQZrXOEL2WkGvMChJGNG1_Q&oe=69F98E67&_nc_sid=7a9f4b";
   });
 
-  const [sheetUrl, setSheetUrl] = useState(() => localStorage.getItem('noor-sheet-url') || '');
-
   if (isLoadingAuth) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-[#f9f9f9]">
@@ -110,12 +108,6 @@ export default function App() {
   if (currentPage === 'dashboard' && !isAdmin) {
     return <AdminLogin onLoginSuccess={handleLoginSuccess} />;
   }
-
-  const handleSaveSheetUrl = (url: string) => {
-    setSheetUrl(url);
-    localStorage.setItem('noor-sheet-url', url);
-    window.location.reload(); // Reload to apply new sheet URL
-  };
 
   const handleSaveLogo = (newLogo: string) => {
     setLogo(newLogo);
@@ -175,32 +167,6 @@ export default function App() {
         <div className="max-w-7xl mx-auto px-6">
           <div className="h-px w-full bg-noor-bronze/10" />
         </div>
-
-        {isAdmin && (
-          <div className="max-w-xl mx-auto px-6 mt-12">
-            <div className="bg-white/80 backdrop-blur-md p-6 rounded-3xl border border-noor-gold/20 shadow-xl">
-              <h3 className="text-sm font-bold uppercase tracking-widest text-noor-gold mb-4">Configuration Google Sheet</h3>
-              <div className="space-y-4">
-                <div>
-                  <label className="block text-[10px] font-bold text-noor-bronze/40 uppercase mb-2">URL du CSV publié</label>
-                  <input 
-                    type="text" 
-                    value={sheetUrl}
-                    onChange={(e) => setSheetUrl(e.target.value)}
-                    placeholder="https://docs.google.com/spreadsheets/d/e/.../pub?output=csv"
-                    className="w-full p-4 bg-white/50 border border-noor-bronze/10 rounded-2xl text-xs focus:ring-2 focus:ring-noor-gold/20 outline-none transition-all"
-                  />
-                </div>
-                <button 
-                  onClick={() => handleSaveSheetUrl(sheetUrl)}
-                  className="w-full py-4 bg-noor-gold text-white rounded-2xl text-xs font-bold tracking-widest uppercase hover:bg-noor-bronze transition-all"
-                >
-                  Enregistrer & Actualiser
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
 
         <div id="catalogue">
           <ProductCatalogue isAdmin={isAdmin} />

@@ -53,11 +53,7 @@ const sanitize = (input: any, key?: string): any => {
   return input;
 };
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-
 const JWT_SECRET = process.env.JWT_SECRET || "noor-design-secret-key-2024";
-const ADMIN_USERNAME = process.env.ADMIN_USERNAME || "karim";
 // Default password is "karimdoha@123" hashed. User should update this in .env
 const ADMIN_PASSWORD_HASH = process.env.ADMIN_PASSWORD_HASH || "$2b$10$oZ6KJp7HLSSJpm0pGNfRQuvsEVjgBmNmgY1E0Ua.VHscM06lCeMma";
 
