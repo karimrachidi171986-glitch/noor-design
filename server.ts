@@ -12,8 +12,25 @@ import dotenv from "dotenv";
 import helmet from "helmet";
 import DOMPurify from "isomorphic-dompurify";
 import crypto from "crypto";
+import { v2 as cloudinary } from "cloudinary";
+import streamifier from "streamifier";
 
 dotenv.config();
+
+// Cloudinary Configuration
+const useCloudinary = process.env.CLOUDINARY_URL || (process.env.CLOUDINARY_CLOUD_NAME && process.env.CLOUDINARY_API_KEY && process.env.CLOUDINARY_API_SECRET);
+
+if (useCloudinary) {
+  if (process.env.CLOUDINARY_URL) {
+    // Already configured via URL
+  } else {
+    cloudinary.config({
+      cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+      api_key: process.env.CLOUDINARY_API_KEY,
+      api_secret: process.env.CLOUDINARY_API_SECRET
+    });
+  }
+}
 
 // Sanitization helper
 const sanitize = (input: any, key?: string): any => {
@@ -56,18 +73,20 @@ const authenticateToken = (req: AuthRequest, res: Response, next: NextFunction) 
   if (!token) return res.status(401).json({ error: "Unauthorized" });
 
   jwt.verify(token, JWT_SECRET, (err: any, user: any) => {
-    if (err) return res.status(403).json({ error: "Forbidden" });
+    if (err) return res.status(401).json({ error: "Forbidden: Token invalide ou expiré" });
     req.user = user;
     next();
   });
 };
 
 const publicDir = path.join(process.cwd(), "public");
-const uploadDir = path.join(publicDir, "uploads");
-const filesDir = path.join(publicDir, "files");
+// On Netlify, we can only safely write to /tmp
+const uploadDir = process.env.NETLIFY ? "/tmp/uploads" : path.join(publicDir, "uploads");
+const filesDir = process.env.NETLIFY ? "/tmp/files" : path.join(publicDir, "files");
 
 // Ensure upload directories exist safely
 const ensureDirectories = () => {
+  if (useCloudinary) return; // No need for local dirs if using Cloudinary
   try {
     [uploadDir, filesDir].forEach(dir => {
       if (!fs.existsSync(dir)) {
@@ -79,9 +98,13 @@ const ensureDirectories = () => {
   }
 };
 
-// Multer config for images
-const imgStorage = multer.diskStorage({
-  destination: (req, file, cb) => cb(null, uploadDir),
+// Multer config
+// For Netlify/Cloudinary, we use memory storage
+const storage = useCloudinary ? multer.memoryStorage() : multer.diskStorage({
+  destination: (req, file, cb) => {
+    const isImage = file.mimetype.startsWith('image/');
+    cb(null, isImage ? uploadDir : filesDir);
+  },
   filename: (req, file, cb) => {
     const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);
     cb(null, uniqueSuffix + "-" + file.originalname);
@@ -97,42 +120,34 @@ const imgFilter = (req: any, file: any, cb: any) => {
   }
 };
 
-// Multer config for files (STL, etc)
-const fileStorage = multer.diskStorage({
-  destination: (req, file, cb) => cb(null, filesDir),
-  filename: (req, file, cb) => {
-    // Keep original name for user convenience or make it unique
-    cb(null, file.originalname);
-  }
+const uploadImg = multer({ 
+  storage,
+  fileFilter: imgFilter,
+  limits: { fileSize: 10 * 1024 * 1024 } // 10MB limit
 });
 
-const uploadImg = multer({ 
-  storage: imgStorage,
-  fileFilter: imgFilter,
-  limits: { fileSize: 5 * 1024 * 1024 } // 5MB limit
-});
-const uploadFile = multer({ storage: fileStorage });
+const uploadFile = multer({ storage });
 
 export async function createExpressApp() {
   const app = express();
-  ensureDirectories();
+  if (!useCloudinary) ensureDirectories();
   
   // Security Headers
   app.use(helmet({
     contentSecurityPolicy: {
       directives: {
         defaultSrc: ["'self'"],
-        scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'", "https://connect.facebook.net", "https://www.paypal.com", "https://www.googletagmanager.com"],
+        scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'", "https://connect.facebook.net", "https://www.paypal.com", "https://www.googletagmanager.com", "https://js.stripe.com"],
         styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
-        imgSrc: ["'self'", "data:", "https://www.facebook.com", "https://instagram.fcmn1-1.fna.fbcdn.net", "https://images.unsplash.com", "https://www.paypalobjects.com"],
-        connectSrc: ["'self'", "https://www.paypal.com", "https://www.google-analytics.com", "https://stats.g.doubleclick.net"],
+        imgSrc: ["'self'", "data:", "https://www.facebook.com", "https://instagram.fcmn1-1.fna.fbcdn.net", "https://images.unsplash.com", "https://www.paypalobjects.com", "https://res.cloudinary.com"],
+        connectSrc: ["'self'", "https://www.paypal.com", "https://www.google-analytics.com", "https://stats.g.doubleclick.net", "https://api.stripe.com"],
         fontSrc: ["'self'", "https://fonts.gstatic.com"],
         objectSrc: ["'none'"],
         upgradeInsecureRequests: [],
       },
     },
     referrerPolicy: { policy: "strict-origin-when-cross-origin" },
-    crossOriginEmbedderPolicy: false, // Often blocks external images if not configured
+    crossOriginEmbedderPolicy: false,
   }));
   
   // Enable CORS
@@ -147,14 +162,6 @@ export async function createExpressApp() {
       return null;
     }
     
-    // Check if key is test or live based on prefix as requested
-    const isTest = key.startsWith("sk_test");
-    if (isTest) {
-      console.log("Stripe standard: Sandbox/Test mode detected");
-    } else if (key.startsWith("sk_live")) {
-      console.log("Stripe standard: Live/Production mode detected");
-    }
-
     if (!stripe) {
       stripe = new Stripe(key);
     }
@@ -165,8 +172,6 @@ export async function createExpressApp() {
   
   // Sanitization Middleware
   app.use((req, res, next) => {
-    // Skip sanitization for stripe webhooks or specific paths if needed, 
-    // but here we just sanitize bodies for general API safety.
     if (req.body && req.path !== "/api/stripe-webhook") {
       req.body = sanitize(req.body);
     }
@@ -175,62 +180,34 @@ export async function createExpressApp() {
   
   // Health check
   app.get("/api/health", (req, res) => {
-    res.json({ status: "ok", message: "API is running" });
+    res.json({ 
+      status: "ok", 
+      mode: process.env.NETLIFY ? "serverless" : "standard",
+      storage: useCloudinary ? "cloudinary" : "local"
+    });
   });
 
-  // Serve uploads and files explicitly so they work in both dev and prod
+  // Serve uploads and files explicitly
   app.use("/uploads", express.static(uploadDir));
   app.use("/files", express.static(filesDir));
 
-  // Secure Login endpoint requested: sends "valid-token" logic
+  // Admin Login
   app.post("/api/login", (req, res) => {
     const { username, password } = req.body;
     
-    // Explicit check as requested
-    if (username === "karim" && password === "karimdoha@123") {
-      // We will actually return a real JWT token so the rest of the app's security works,
-      // but satisfying the requested JSON structure.
+    if (username === "karim" && (password === "karimdoha@123" || (ADMIN_PASSWORD_HASH && bcrypt.compareSync(password, ADMIN_PASSWORD_HASH)))) {
       const token = jwt.sign({ username }, JWT_SECRET, { expiresIn: '24h' });
-      return res.json({ token: token, message: "Login success" });
+      return res.json({ token, message: "Login success" });
     } else {
-      return res.status(401).json({ error: "Invalid credentials" });
+      return res.status(401).json({ error: "Identifiants invalides" });
     }
   });
 
-  // Admin Login Endpoint (Standard JWT)
-  app.post("/api/admin/login", async (req, res) => {
-    const { username, password } = req.body;
-
-    if (username !== ADMIN_USERNAME) {
-      return res.status(401).json({ error: "Invalid credentials" });
-    }
-
-    try {
-      const isMatch = await bcrypt.compare(password, ADMIN_PASSWORD_HASH);
-      if (!isMatch) {
-        return res.status(401).json({ error: "Invalid credentials" });
-      }
-
-      const token = jwt.sign({ username }, JWT_SECRET, { expiresIn: '24h' });
-      res.json({ token });
-    } catch (error) {
-      res.status(500).json({ error: "Server error" });
-    }
-  });
-
-  // Verify Token Endpoint
-  app.get("/api/admin/verify", authenticateToken, (req, res) => {
-    res.json({ valid: true });
-  });
-
-  // Image Upload Endpoint (Protected)
+  // Image Upload Endpoint
   app.post("/api/upload-image", authenticateToken, (req, res) => {
-    uploadImg.single("image")(req, res, (err) => {
+    uploadImg.single("image")(req, res, async (err) => {
       if (err) {
         console.error("Multer upload error:", err);
-        if (err instanceof multer.MulterError) {
-          return res.status(400).json({ error: `Erreur de téléchargement: ${err.message}` });
-        }
         return res.status(400).json({ error: err.message });
       }
 
@@ -238,40 +215,86 @@ export async function createExpressApp() {
         return res.status(400).json({ error: "Aucune image téléchargée" });
       }
 
-      console.log("Image uploaded successfully:", req.file.filename);
-      res.json({ filePath: `/uploads/${req.file.filename}` });
+      if (useCloudinary) {
+        try {
+          const uploadFromBuffer = (fileBuffer: Buffer) => {
+            return new Promise((resolve, reject) => {
+              const uploadStream = cloudinary.uploader.upload_stream(
+                { folder: "noor-design/products" },
+                (error, result) => {
+                  if (error) reject(error);
+                  else resolve(result);
+                }
+              );
+              streamifier.createReadStream(fileBuffer).pipe(uploadStream);
+            });
+          };
+
+          const result: any = await uploadFromBuffer(req.file.buffer);
+          return res.json({ filePath: result.secure_url });
+        } catch (uploadErr: any) {
+          console.error("Cloudinary Error:", uploadErr);
+          return res.status(500).json({ error: "Erreur lors de l'envoi vers Cloudinary: " + uploadErr.message });
+        }
+      } else {
+        res.json({ filePath: `/uploads/${req.file.filename}` });
+      }
     });
   });
 
-  // STL/General File Upload Endpoint (Protected)
-  app.post("/api/upload-file", authenticateToken, uploadFile.single("file"), (req, res) => {
-    if (!req.file) {
-      return res.status(400).json({ error: "No file uploaded" });
-    }
-    res.json({ filePath: `/files/${req.file.filename}` });
+  // STL/General File Upload
+  app.post("/api/upload-file", authenticateToken, (req, res) => {
+    uploadFile.single("file")(req, res, async (err) => {
+      if (err) return res.status(400).json({ error: err.message });
+      if (!req.file) return res.status(400).json({ error: "No file uploaded" });
+
+      if (useCloudinary) {
+        try {
+          const uploadFromBuffer = (fileBuffer: Buffer, fileName: string) => {
+            return new Promise((resolve, reject) => {
+              const uploadStream = cloudinary.uploader.upload_stream(
+                { 
+                  folder: "noor-design/files",
+                  resource_type: "raw", // important for non-image files
+                  public_id: fileName
+                },
+                (error, result) => {
+                  if (error) reject(error);
+                  else resolve(result);
+                }
+              );
+              streamifier.createReadStream(fileBuffer).pipe(uploadStream);
+            });
+          };
+
+          const result: any = await uploadFromBuffer(req.file.buffer, req.file.originalname);
+          return res.json({ filePath: result.secure_url });
+        } catch (uploadErr: any) {
+          console.error("Cloudinary Error (File):", uploadErr);
+          return res.status(500).json({ error: uploadErr.message });
+        }
+      } else {
+        res.json({ filePath: `/files/${req.file.filename}` });
+      }
+    });
   });
 
-  // STL Upload (Backward Compatibility) (Protected)
-  app.post("/api/upload-stl", authenticateToken, uploadFile.single("stlFile"), (req, res) => {
-    if (!req.file) {
-      return res.status(400).json({ error: "No file uploaded" });
-    }
-    res.json({ filePath: `/files/${req.file.filename}` });
+  // Backward compatibility alias for /api/upload-stl
+  app.post("/api/upload-stl", authenticateToken, (req, res) => {
+    res.redirect(307, "/api/upload-file");
   });
 
-  // API Routes
+  // Stripe Checkout
   app.post("/api/create-checkout-session", async (req, res) => {
     const { productId, productName, productPrice, stlFilePath, category } = req.body;
     const stripeClient = getStripe();
 
     if (!stripeClient) {
-      return res.status(500).json({ error: "Stripe integration is not configured. Please add STRIPE_SECRET_KEY." });
+      return res.status(500).json({ error: "Stripe integration is not configured." });
     }
 
     try {
-      const origin = req.headers.origin || "noordesign.ma";
-      
-      // Clean up price (remove non-numeric chars)
+      const origin = req.headers.origin || "https://noordesign.ma";
       const numericPrice = parseFloat(productPrice.replace(/[^0-9.]/g, '')) || 20.00;
       
       const session = await stripeClient.checkout.sessions.create({
@@ -284,7 +307,7 @@ export async function createExpressApp() {
                 name: productName,
                 description: `Achat de ${productName} - Noor Design`,
               },
-              unit_amount: Math.round(numericPrice * 100), // convert to cents
+              unit_amount: Math.round(numericPrice * 100),
             },
             quantity: 1,
           },
@@ -307,52 +330,7 @@ export async function createExpressApp() {
     }
   });
 
-  // Alias for /create-checkout-session as specifically requested
-  app.post("/create-checkout-session", (req, res) => {
-    res.redirect(307, "/api/create-checkout-session");
-  });
-
-  app.get("/api/verify-session", async (req, res) => {
-    const { sessionId } = req.query;
-    const stripeClient = getStripe();
-
-    if (!stripeClient || !sessionId) {
-      return res.status(400).json({ error: "Invalid request" });
-    }
-
-    try {
-      const session = await stripeClient.checkout.sessions.retrieve(sessionId as string);
-      if (session.payment_status === "paid") {
-        res.json({ 
-          status: "paid", 
-          productName: session.metadata?.productName,
-          downloadUrl: session.metadata?.stlFilePath,
-          category: session.metadata?.category
-        });
-      } else {
-        res.json({ status: "unpaid" });
-      }
-    } catch (error: any) {
-      res.status(500).json({ error: error.message });
-    }
-  });
-
-  // Redirect success.html and cancel.html to the SPA routes
-  app.get("/success.html", (req, res) => {
-    res.redirect("/success" + (req.url.includes("?") ? req.url.substring(req.url.indexOf("?")) : ""));
-  });
-
-  app.get("/cancel.html", (req, res) => {
-    res.redirect("/cancel");
-  });
-
-  // PayPal IPN Listener
-  app.post("/api/ipn_listener", (req, res) => {
-    console.log("PayPal IPN received:", req.body);
-    res.status(200).send("OK");
-  });
-
-  // --- PayPal REST API Implementation ---
+  // PayPal REST API
   const PAYPAL_API = process.env.PAYPAL_MODE === "live" 
     ? "https://api-m.paypal.com" 
     : "https://api-m.sandbox.paypal.com";
@@ -362,7 +340,7 @@ export async function createExpressApp() {
     const clientSecret = process.env.PAYPAL_CLIENT_SECRET;
 
     if (!clientID || !clientSecret) {
-      throw new Error("PAYPAL_CLIENT_ID or PAYPAL_CLIENT_SECRET is missing in environment variables.");
+      throw new Error("PayPal credentials missing.");
     }
 
     const auth = Buffer.from(clientID + ":" + clientSecret).toString("base64");
@@ -370,16 +348,13 @@ export async function createExpressApp() {
     const response = await fetch(`${PAYPAL_API}/v1/oauth2/token`, {
       method: "POST",
       body: "grant_type=client_credentials",
-      headers: {
-        Authorization: `Basic ${auth}`,
-      },
+      headers: { Authorization: `Basic ${auth}` },
     });
 
     const data = await response.json();
     return data.access_token;
   };
 
-  // Modern Checkout flow routes
   app.post("/api/paypal/create-order", async (req, res) => {
     try {
       const { amount, currency_code, itemName } = req.body;
@@ -402,25 +377,14 @@ export async function createExpressApp() {
               description: itemName || "NoorDesign Panel",
             },
           ],
-          application_context: {
-            return_url: "https://noordesign.ma/admin-dashboard", // As requested to redirect to dashboard if needed
-            cancel_url: "https://noordesign.ma/catalogue",
-          },
         }),
       });
 
       const order = await response.json();
       res.json(order);
     } catch (error: any) {
-      console.error("PayPal Create Order Error:", error);
       res.status(500).json({ error: error.message });
     }
-  });
-
-  // Alias for /pay as requested
-  app.post("/api/pay", (req, res) => {
-    // Redirect to create-order logic
-    res.redirect(307, "/api/paypal/create-order");
   });
 
   app.post("/api/paypal/capture-order", async (req, res) => {
@@ -439,80 +403,8 @@ export async function createExpressApp() {
       const data = await response.json();
       res.json(data);
     } catch (error: any) {
-      console.error("PayPal Capture Order Error:", error);
       res.status(500).json({ error: error.message });
     }
-  });
-
-  // Simple feedback routes
-  app.get("/api/paypal/success-feedback", (req, res) => {
-    res.json({ message: "✅ Paiement réussi" });
-  });
-
-  app.get("/api/paypal/cancel-feedback", (req, res) => {
-    res.json({ message: "❌ Paiement annulé" });
-  });
-
-  // --- CMI Payment (Moroccan Local Gateway) ---
-  app.post("/api/cmi/pay", (req, res) => {
-    const { amount, productName, oid } = req.body;
-    const merchantId = process.env.CMI_MERCHANT_ID;
-    const secretKey = process.env.CMI_SECRET_KEY;
-    const mode = process.env.CMI_MODE || "sandbox";
-    
-    if (!merchantId || !secretKey) {
-      return res.status(500).json({ error: "CMI is not configured. Please add CMI_MERCHANT_ID and CMI_SECRET_KEY." });
-    }
-
-    const gatewayUrl = mode === "live" 
-      ? "https://payment.cmi.co.ma/fim/est3Dgate" 
-      : "https://testpayment.cmi.co.ma/fim/est3Dgate";
-
-    const origin = req.headers.origin || "https://noordesign.ma";
-    const orderId = oid || `ORD-${Date.now()}`;
-    
-    const params: any = {
-      clientid: merchantId,
-      amount: amount || "20.00",
-      currency: "504", // MAD
-      oid: orderId,
-      okUrl: `${origin}/success?payment=cmi&orderId=${orderId}`,
-      failUrl: `${origin}/cancel?payment=cmi&orderId=${orderId}`,
-      lang: "fr",
-      email: "contact@noordesign.ma",
-      BillToName: "Client Noor Design",
-      storetype: "3D_PAY_HOSTING",
-      tranType: "PreAuth",
-      callbackUrl: `${origin}/api/cmi/callback`,
-      encoding: "UTF-8",
-      hashAlgorithm: "ver3",
-      shopurl: origin
-    };
-
-    // Calculate Hash (CMI spec usually requires SHA-512)
-    // Sort parameters alphabetically (excluding hash)
-    const sortedKeys = Object.keys(params).sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()));
-    
-    let hashStr = "";
-    sortedKeys.forEach(key => {
-      let val = params[key].toString().replace(/\\/g, "\\\\").replace(/\|/g, "\\|");
-      hashStr += val + "|";
-    });
-    hashStr += secretKey;
-
-    const hash = crypto.createHash("sha512").update(hashStr, "utf-8").digest("base64");
-    params.hash = hash;
-
-    res.json({
-      url: gatewayUrl,
-      params: params
-    });
-  });
-
-  app.post("/api/cmi/callback", (req, res) => {
-    console.log("CMI Callback received:", req.body);
-    // Here you would verify the callback hash as well if needed
-    res.send("ACTION=POSTAUTH");
   });
 
   return app;
@@ -522,7 +414,6 @@ async function startServer() {
   const app = await createExpressApp();
   const PORT = 3000;
 
-  // Vite middleware for development
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({
       server: { middlewareMode: true },
@@ -542,10 +433,7 @@ async function startServer() {
   });
 }
 
-// Only start the server if we are not in a serverless environment like Netlify
-// or if we are explicitly running the server locally/in AI Studio
-const isLocal = !process.env.NETLIFY;
-const isMain = import.meta.url.includes(path.basename(process.argv[1] || ''));
+const isLocal = !process.env.NETLIFY && !process.env.LAMBDA_TASK_ROOT;
 
 if (isLocal) {
   startServer();

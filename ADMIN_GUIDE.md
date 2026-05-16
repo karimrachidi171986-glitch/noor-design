@@ -50,7 +50,15 @@ This project now includes a secure admin panel built with React, Node.js, Expres
     -   `STRIPE_SECRET_KEY` (if using payments)
 5.  **Enjoy:** Netlify will automatically build your React frontend and deploy your Node.js backend as a Netlify Function. The redirect from `/api/*` to your function is already configured in `netlify.toml`.
 
-*(Note: File uploads use `multer` with local storage in this demo. For production Netlify deployments, you should use a cloud storage provider like AWS S3 or Cloudinary, as Netlify Functions have a read-only file system and temporary execution environment.)*
+*(Note: File uploads use `multer`. For Netlify deployments, local storage is NOT persistent. You MUST use Cloudinary for permanent image and file storage.)*
+
+### ☁️ Cloud Storage Setup (Cloudinary)
+
+1. **Create an Account:** [Cloudinary.com](https://cloudinary.com/) (Free tier is sufficient).
+2. **Setup Env Vars:** In Netlify Settings, add:
+   - `CLOUDINARY_URL`: (e.g., `cloudinary://123456789:abcdefg@mycloudname`)
+   - OR individual keys: `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET`.
+3. The system will automatically detect these and switch from local storage to cloud storage.
 
 - **JWT Authentication:** Tokens expire in 24 hours. They are stored in `localStorage` and sent in the `Authorization` header for API requests.
 - **Bcrypt Hashing:** Passwords are never stored in plain text.
