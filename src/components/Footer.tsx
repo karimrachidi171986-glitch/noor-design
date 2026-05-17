@@ -1,4 +1,4 @@
-import { Flower2, Instagram, Facebook, Mail, MapPin, Phone } from 'lucide-react';
+import { Instagram, Facebook, MapPin, Phone } from 'lucide-react';
 import { ReactNode } from 'react';
 
 interface FooterProps {

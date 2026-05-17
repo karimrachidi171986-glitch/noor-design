@@ -10,9 +10,10 @@ import {
   AlertCircle,
   Maximize2
 } from 'lucide-react';
+import { supabase } from '../lib/supabase';
 
 interface UploadedImage {
-  id: string;
+  id: string | number;
   url: string;
   name: string;
   createdAt: number;
@@ -20,6 +21,7 @@ interface UploadedImage {
 
 const MediaGallery: React.FC = () => {
   const [images, setImages] = useState<UploadedImage[]>([]);
+  const [loading, setLoading] = useState(true);
   const [dragActive, setDragActive] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [preview, setPreview] = useState<string | null>(null);
@@ -27,27 +29,37 @@ const MediaGallery: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  // @ts-ignore
-  const cloudName = import.meta.env.VITE_CLOUDINARY_CLOUD_NAME || 'demo';
-  // @ts-ignore
-  const uploadPreset = import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET || 'noordesign_upload';
-
-  // Load from local storage on mount to persist gallery (client-side only as requested)
   useEffect(() => {
-    const saved = localStorage.getItem('noor_design_gallery');
-    if (saved) {
-      try {
-        setImages(JSON.parse(saved));
-      } catch (e) {
-        console.error('Failed to parse gallery data');
-      }
-    }
+    fetchGallery();
   }, []);
 
-  // Save to local storage whenever images change
-  useEffect(() => {
-    localStorage.setItem('noor_design_gallery', JSON.stringify(images));
-  }, [images]);
+  const fetchGallery = async () => {
+    setLoading(true);
+    try {
+      const { data, error: fetchError } = await supabase
+        .from('gallery_images')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (fetchError) throw fetchError;
+
+      if (data) {
+        setImages(data.map(img => ({
+          id: img.id,
+          url: img.url,
+          name: img.name,
+          createdAt: new Date(img.created_at).getTime()
+        })));
+      }
+    } catch (err) {
+      console.error('Failed to fetch gallery:', err);
+      // Fallback to local storage if table doesn't exist yet
+      const saved = localStorage.getItem('noor_design_gallery');
+      if (saved) setImages(JSON.parse(saved));
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleDrag = (e: React.DragEvent) => {
     e.preventDefault();
@@ -85,49 +97,69 @@ const MediaGallery: React.FC = () => {
     reader.readAsDataURL(file);
   };
 
-  const uploadToCloudinary = async () => {
+  const uploadToSupabase = async () => {
     if (!selectedFile) return;
 
     setUploading(true);
     setError(null);
 
-    const formData = new FormData();
-    formData.append('file', selectedFile);
-    formData.append('upload_preset', uploadPreset);
-
     try {
-      const response = await fetch(`https://api.cloudinary.com/v1_1/${cloudName}/image/upload`, {
-        method: 'POST',
-        body: formData,
-      });
+      const fileName = `${Date.now()}_${selectedFile.name}`;
+      const { data: uploadData, error: uploadError } = await supabase.storage
+        .from('gallery')
+        .upload(fileName, selectedFile);
 
-      if (!response.ok) {
-        const errData = await response.json();
-        throw new Error(errData.error?.message || 'Upload failed');
-      }
+      if (uploadError) throw uploadError;
 
-      const data = await response.json();
+      const { data: { publicUrl } } = supabase.storage
+        .from('gallery')
+        .getPublicUrl(uploadData.path);
       
-      const newImage: UploadedImage = {
-        id: data.public_id,
-        url: data.secure_url,
-        name: selectedFile.name,
-        createdAt: Date.now(),
-      };
+      if (!publicUrl) throw new Error('Failed to get public URL');
 
-      setImages(prev => [newImage, ...prev]);
-      setPreview(null);
-      setSelectedFile(null);
+      const { data: dbData, error: dbError } = await supabase
+        .from('gallery_images')
+        .insert([{ url: publicUrl, name: selectedFile.name }])
+        .select();
+
+      if (dbError) throw dbError;
+
+      if (dbData && dbData[0]) {
+        const newImage: UploadedImage = {
+          id: dbData[0].id,
+          url: dbData[0].url,
+          name: dbData[0].name,
+          createdAt: new Date(dbData[0].created_at).getTime(),
+        };
+
+        setImages(prev => [newImage, ...prev]);
+        setPreview(null);
+        setSelectedFile(null);
+      }
     } catch (err: any) {
-      console.error('Cloudinary Upload Error:', err);
-      setError(`Erreur d'upload: ${err.message}. Vérifiez votre configuration Cloudinary.`);
+      console.error('Supabase Upload Error:', err);
+      setError(`Erreur d'upload: ${err.message}.`);
     } finally {
       setUploading(false);
     }
   };
 
-  const removeImage = (id: string) => {
-    setImages(prev => prev.filter(img => img.id !== id));
+  const removeImage = async (id: string | number) => {
+    if (!confirm('Supprimer cette image de la galerie ?')) return;
+
+    try {
+      const { error: deleteError } = await supabase
+        .from('gallery_images')
+        .delete()
+        .eq('id', id);
+
+      if (deleteError) throw deleteError;
+
+      setImages(prev => prev.filter(img => img.id !== id));
+    } catch (err) {
+      console.error('Delete error:', err);
+      alert('Erreur lors de la suppression.');
+    }
   };
 
   const clearPreview = () => {
@@ -222,7 +254,7 @@ const MediaGallery: React.FC = () => {
 
                   <div className="flex gap-4">
                     <button 
-                      onClick={uploadToCloudinary}
+                      onClick={uploadToSupabase}
                       disabled={uploading}
                       className="flex-1 py-4 bg-noor-bronze text-white rounded-2xl font-bold text-xs uppercase tracking-[0.2em] hover:bg-noor-gold transition-all duration-500 shadow-lg shadow-noor-bronze/20 flex items-center justify-center gap-3 disabled:opacity-50 disabled:cursor-not-allowed"
                     >
@@ -275,7 +307,7 @@ const MediaGallery: React.FC = () => {
               </li>
               <li className="flex items-center gap-3 text-[10px] text-noor-bronze/60 uppercase tracking-wider">
                 <span className="w-1 h-1 bg-noor-bronze/40 rounded-full" />
-                Hébergement: Cloudinary Global Edge
+                Hébergement: Supabase Storage
               </li>
             </ul>
           </div>
@@ -289,7 +321,11 @@ const MediaGallery: React.FC = () => {
             </h3>
           </div>
 
-          {images.length === 0 ? (
+          {loading ? (
+             <div className="flex justify-center py-32">
+                <Loader2 className="w-10 h-10 text-noor-gold animate-spin" />
+             </div>
+          ) : images.length === 0 ? (
             <div className="bg-white/50 border border-noor-bronze/5 rounded-[2.5rem] py-32 flex flex-col items-center text-center px-12">
               <div className="w-20 h-20 bg-noor-bronze/[0.03] rounded-full flex items-center justify-center mb-6">
                 <ImageIcon className="w-10 h-10 text-noor-bronze/10" />

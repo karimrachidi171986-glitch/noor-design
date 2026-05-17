@@ -5,13 +5,13 @@ import { Product, PRODUCTS } from '../constants';
 
 import { getAuthToken } from '../lib/auth';
 import DOMPurify from 'isomorphic-dompurify';
-import { loadStripe } from '@stripe/stripe-js';
 
 const sanitize = (input: string): string => {
   return DOMPurify.sanitize(input, { ALLOWED_TAGS: [], ALLOWED_ATTR: [] });
 };
 
 import PayPalButton from './PayPalButton';
+import { supabase } from '../lib/supabase';
 
 interface StripeCatalogueProps {
   isAdmin?: boolean;
@@ -39,19 +39,16 @@ const ProductCard: React.FC<ProductCardProps> = ({
   const [isStripeLoading, setIsStripeLoading] = useState(false);
   const [isCMILoading, setIsCMILoading] = useState(false);
 
-  // Success handler for PayPal
   const handlePayPalSuccess = (details: any) => {
     console.log('Payment Successful:', details);
     alert('✅ Paiement réussi');
     
-    // Store purchase info for success page
     localStorage.setItem('last_purchase', JSON.stringify({
       name: product.name,
       category: product.category,
       downloadUrl: (product.category === 'stl' && product.name.toLowerCase().includes('aurora')) ? '/files/aurora.stl' : (product.stlFilePath || '')
     }));
 
-    // Redirect to success page
     setTimeout(() => {
       window.location.href = `/success?order_id=${details.id}&name=${encodeURIComponent(product.name)}&category=${product.category}`;
     }, 1500);
@@ -272,14 +269,53 @@ const ProductCard: React.FC<ProductCardProps> = ({
 }
 
 export default function ProductCatalogue({ isAdmin }: StripeCatalogueProps) {
-  const [products, setProducts] = useState<Product[]>(() => {
-    const saved = localStorage.getItem('noor-stripe-products');
-    return saved ? JSON.parse(saved) : PRODUCTS.filter(p => p.category === 'stl' || p.category === 'tableau');
-  });
+  const [products, setProducts] = useState<Product[]>([]);
+  const [loading, setLoading] = useState(true);
   const [loadingId, setLoadingId] = useState<string | null>(null);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [uploadProgress, setUploadProgress] = useState(false);
   const [uploadMessage, setUploadMessage] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
+
+  useEffect(() => {
+    fetchProducts();
+  }, []);
+
+  const fetchProducts = async () => {
+    setLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from('products')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+
+      if (data) {
+        // Map Supabase snake_case to Product camelCase
+        const mappedProducts: Product[] = data.map(p => ({
+          id: p.id,
+          name: p.name,
+          price: p.price,
+          category: p.category as any,
+          imageUrl: p.image_url,
+          dimensions: p.dimensions,
+          instagramUrl: p.instagram_url,
+          description: p.description,
+          stripePriceId: p.stripe_price_id,
+          stlFilePath: p.stl_file_path
+        }));
+        setProducts(mappedProducts);
+      }
+    } catch (err) {
+      console.error('Error fetching products:', err);
+      // Fallback to initial constants if Supabase is empty or failing
+      const saved = localStorage.getItem('noor-stripe-products');
+      const initial = saved ? JSON.parse(saved) : PRODUCTS.filter(p => p.category === 'stl' || p.category === 'tableau');
+      setProducts(initial);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
     if (uploadMessage) {
@@ -287,10 +323,6 @@ export default function ProductCatalogue({ isAdmin }: StripeCatalogueProps) {
       return () => clearTimeout(timer);
     }
   }, [uploadMessage]);
-
-  useEffect(() => {
-    localStorage.setItem('noor-stripe-products', JSON.stringify(products));
-  }, [products]);
 
   const handleBuyNow = (product: Product) => {
     const numericPrice = product.price.replace(/[^0-9.]/g, '');
@@ -344,35 +376,33 @@ export default function ProductCatalogue({ isAdmin }: StripeCatalogueProps) {
     document.body.removeChild(form);
   };
 
-  const handleSTLUpload = async (e: React.ChangeEvent<HTMLInputElement>, productId: string) => {
+  const handleSTLUpload = async (e: React.ChangeEvent<HTMLInputElement>, productId: string | number) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
     setUploadProgress(true);
-    const formData = new FormData();
-    formData.append('file', file);
-
     try {
-      const token = getAuthToken();
-      const response = await fetch('/api/upload-file', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`
-        },
-        body: formData,
-      });
-      const data = await response.json();
+      const fileName = `${Date.now()}_${file.name}`;
+      const { data, error } = await supabase.storage
+        .from('products')
+        .upload(`files/${fileName}`, file);
+
+      if (error) throw error;
+
+      const { data: { publicUrl } } = supabase.storage
+        .from('products')
+        .getPublicUrl(data.path);
       
-      if (data.filePath) {
+      if (publicUrl) {
         if (editingProduct) {
-          setEditingProduct({ ...editingProduct, stlFilePath: data.filePath });
+          setEditingProduct({ ...editingProduct, stlFilePath: publicUrl });
         } else {
-          setProducts(prev => prev.map(p => p.id === productId ? { ...p, stlFilePath: data.filePath } : p));
+          setProducts(prev => prev.map(p => p.id === productId ? { ...p, stlFilePath: publicUrl } : p));
         }
       }
     } catch (err) {
-      console.error('Upload failed:', err);
-      alert('Échec de l\'upload du fichier');
+      console.error('STL Upload failed:', err);
+      alert('Échec de l\'upload du fichier STL sur Supabase');
     } finally {
       setUploadProgress(false);
     }
@@ -383,32 +413,25 @@ export default function ProductCatalogue({ isAdmin }: StripeCatalogueProps) {
     if (!file) return;
 
     setUploadProgress(true);
-    const formData = new FormData();
-    formData.append('image', file);
-
     try {
-      const token = getAuthToken();
-      const response = await fetch('/api/upload-image', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`
-        },
-        body: formData,
-      });
-      
-      const data = await response.json();
+      const fileName = `${Date.now()}_${file.name}`;
+      const { data, error } = await supabase.storage
+        .from('products')
+        .upload(`images/${fileName}`, file);
 
-      if (!response.ok) {
-        throw new Error(data.error || 'Upload failed');
-      }
-      
-      if (data.filePath && editingProduct) {
-        setEditingProduct({ ...editingProduct, imageUrl: data.filePath });
-        setUploadMessage({ text: 'Image uploadée avec succès ✅', type: 'success' });
+      if (error) throw error;
+
+      const { data: { publicUrl } } = supabase.storage
+        .from('products')
+        .getPublicUrl(data.path);
+
+      if (publicUrl && editingProduct) {
+        setEditingProduct({ ...editingProduct, imageUrl: publicUrl });
+        setUploadMessage({ text: 'Image uploadée sur Supabase ✅', type: 'success' });
       }
     } catch (err: any) {
       console.error('Image upload failed:', err);
-      setUploadMessage({ text: err.message === 'Upload failed' ? 'Échec de l\'upload de l\'image' : err.message, type: 'error' });
+      setUploadMessage({ text: 'Échec de l\'upload de l\'image sur Supabase', type: 'error' });
     } finally {
       setUploadProgress(false);
     }
@@ -416,7 +439,7 @@ export default function ProductCatalogue({ isAdmin }: StripeCatalogueProps) {
 
   const handleAddProduct = () => {
     const newProduct: Product = {
-      id: `prod-${Date.now()}`,
+      id: 0, // Placeholder for auto-increment
       name: 'Nouveau Produit',
       price: '0.00 €',
       category: 'tableau',
@@ -429,31 +452,52 @@ export default function ProductCatalogue({ isAdmin }: StripeCatalogueProps) {
     setEditingProduct(newProduct);
   };
 
-  const handleEditSave = (e: React.FormEvent) => {
+  const handleEditSave = async (e: React.FormEvent) => {
     e.preventDefault();
     if (editingProduct) {
       const sanitizedProduct = {
-        ...editingProduct,
         name: sanitize(editingProduct.name),
         description: sanitize(editingProduct.description),
         price: sanitize(editingProduct.price),
+        category: editingProduct.category,
+        image_url: editingProduct.imageUrl, // Map to snake_case for DB
         dimensions: editingProduct.dimensions ? sanitize(editingProduct.dimensions) : '',
-        imageUrl: sanitize(editingProduct.imageUrl),
-        stripePriceId: sanitize(editingProduct.stripePriceId || ''),
+        instagram_url: editingProduct.instagramUrl,
+        stripe_price_id: sanitize(editingProduct.stripePriceId || ''),
+        stl_file_path: editingProduct.stlFilePath || null,
       };
 
-      if (products.find(p => p.id === sanitizedProduct.id)) {
-        setProducts(products.map(p => p.id === sanitizedProduct.id ? sanitizedProduct : p));
-      } else {
-        setProducts([sanitizedProduct, ...products]);
+      try {
+        let response;
+        if (editingProduct.id === 0) {
+          // Insert new
+          response = await supabase.from('products').insert([sanitizedProduct]).select();
+        } else {
+          // Update existing
+          response = await supabase.from('products').update(sanitizedProduct).eq('id', editingProduct.id).select();
+        }
+
+        if (response.error) throw response.error;
+
+        await fetchProducts(); // Refresh list
+        setEditingProduct(null);
+      } catch (err) {
+        console.error('Error saving product:', err);
+        alert('Erreur lors de l\'enregistrement sur Supabase');
       }
-      setEditingProduct(null);
     }
   };
 
-  const handleDelete = (id: string) => {
-    if (confirm('Supprimer ce produit (tous types confondus) de la liste ?')) {
-      setProducts(prev => prev.filter(p => p.id !== id));
+  const handleDelete = async (id: string | number) => {
+    if (confirm('Supprimer ce produit définitivement de Supabase ?')) {
+      try {
+        const { error } = await supabase.from('products').delete().eq('id', id);
+        if (error) throw error;
+        setProducts(prev => prev.filter(p => p.id !== id));
+      } catch (err) {
+        console.error('Delete failed:', err);
+        alert('Erreur lors de la suppression sur Supabase');
+      }
     }
   };
 
@@ -474,21 +518,27 @@ export default function ProductCatalogue({ isAdmin }: StripeCatalogueProps) {
           </p>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-10">
-          <AnimatePresence mode="popLayout">
-            {products.filter(p => p.category === 'stl').map((product) => (
-              <ProductCard 
-                key={product.id} 
-                product={product} 
-                isAdmin={isAdmin} 
-                onBuy={handleBuyNow} 
-                onEdit={(p) => setEditingProduct(p)}
-                onDelete={handleDelete}
-                loadingId={loadingId}
-              />
-            ))}
-          </AnimatePresence>
-        </div>
+        {loading ? (
+          <div className="flex justify-center py-20">
+            <Loader2 className="w-10 h-10 text-noor-gold animate-spin" />
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-10">
+            <AnimatePresence mode="popLayout">
+              {products.filter(p => p.category === 'stl').map((product) => (
+                <ProductCard 
+                  key={product.id} 
+                  product={product} 
+                  isAdmin={isAdmin} 
+                  onBuy={handleBuyNow} 
+                  onEdit={(p) => setEditingProduct(p)}
+                  onDelete={handleDelete}
+                  loadingId={loadingId}
+                />
+              ))}
+            </AnimatePresence>
+          </div>
+        )}
       </div>
 
       {/* SECTION 2: PHYSICAL ARTWORKS */}
@@ -506,21 +556,27 @@ export default function ProductCatalogue({ isAdmin }: StripeCatalogueProps) {
           </p>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-10">
-          <AnimatePresence mode="popLayout">
-            {products.filter(p => p.category === 'tableau').map((product) => (
-              <ProductCard 
-                key={product.id} 
-                product={product} 
-                isAdmin={isAdmin} 
-                onBuy={handleBuyNow} 
-                onEdit={(p) => setEditingProduct(p)}
-                onDelete={handleDelete}
-                loadingId={loadingId}
-              />
-            ))}
-          </AnimatePresence>
-        </div>
+        {loading ? (
+          <div className="flex justify-center py-20">
+            <Loader2 className="w-10 h-10 text-noor-gold animate-spin" />
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-10">
+            <AnimatePresence mode="popLayout">
+              {products.filter(p => p.category === 'tableau').map((product) => (
+                <ProductCard 
+                  key={product.id} 
+                  product={product} 
+                  isAdmin={isAdmin} 
+                  onBuy={handleBuyNow} 
+                  onEdit={(p) => setEditingProduct(p)}
+                  onDelete={handleDelete}
+                  loadingId={loadingId}
+                />
+              ))}
+            </AnimatePresence>
+          </div>
+        )}
       </div>
 
       {isAdmin && (

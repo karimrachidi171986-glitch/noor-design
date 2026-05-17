@@ -1,5 +1,5 @@
 import { motion } from 'motion/react';
-import { Image, MapPin, MessageCircle, RefreshCw, Facebook, Instagram, Upload, Save, Shield, ShieldCheck, User } from 'lucide-react';
+import { Image, MessageCircle, RefreshCw, Facebook, Instagram, Upload, Save, Shield, ShieldCheck } from 'lucide-react';
 import React, { useState, useEffect, ReactNode, useRef } from 'react';
 
 interface HeaderProps {

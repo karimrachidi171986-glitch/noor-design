@@ -1,5 +1,5 @@
 export interface Product {
-  id: string;
+  id: string | number;
   name: string;
   price: string;
   category: 'panel' | 'art' | 'stl' | 'tableau';
