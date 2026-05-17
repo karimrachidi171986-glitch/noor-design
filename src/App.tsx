@@ -22,8 +22,16 @@ export default function App() {
       setIsAdmin(isAuth);
       
       const path = window.location.pathname;
-      if (isAuth && (path === '/admin' || path === '/admin-login')) {
-        window.location.href = '/admin-dashboard';
+      if (isAuth) {
+        if (path === '/admin' || path === '/admin-login') {
+          setCurrentPage('dashboard');
+          window.history.pushState({}, '', '/admin-dashboard');
+        }
+      } else {
+        if (path === '/admin-dashboard') {
+          setCurrentPage('admin');
+          window.history.pushState({}, '', '/admin');
+        }
       }
       
       setIsLoadingAuth(false);

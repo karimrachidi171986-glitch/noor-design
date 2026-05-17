@@ -1,5 +1,4 @@
 import express, { Request, Response, NextFunction } from "express";
-import { createServer as createViteServer } from "vite";
 import path from "path";
 import Stripe from "stripe";
 import jwt from "jsonwebtoken";
@@ -33,6 +32,7 @@ const sanitize = (input: any, key?: string): any => {
 };
 
 const JWT_SECRET = process.env.JWT_SECRET || "noor-design-secret-key-2024";
+const ADMIN_USERNAME = process.env.ADMIN_USERNAME || "karim";
 // Default password is "karimdoha@123" hashed. User should update this in .env
 const ADMIN_PASSWORD_HASH = process.env.ADMIN_PASSWORD_HASH || "$2b$10$oZ6KJp7HLSSJpm0pGNfRQuvsEVjgBmNmgY1E0Ua.VHscM06lCeMma";
 
@@ -128,7 +128,7 @@ export async function createExpressApp() {
       
       console.log(`Login attempt for user: ${username}`);
       
-      const isValidUser = username === "karim";
+      const isValidUser = username === ADMIN_USERNAME;
       const isValidPass = (password === "karimdoha@123" || (ADMIN_PASSWORD_HASH && bcrypt.compareSync(password, ADMIN_PASSWORD_HASH)));
 
       if (isValidUser && isValidPass) {
@@ -294,12 +294,18 @@ async function startServer() {
 
   // Vite middleware for development
   if (process.env.NODE_ENV !== "production") {
-    const vite = await createViteServer({
-      server: { middlewareMode: true },
-      appType: "spa",
-    });
-    app.use(vite.middlewares);
-    console.log("Vite middleware loaded");
+    try {
+      // Use dynamic import for Vite to avoid it being bundled in production/serverless
+      const { createServer: createViteServer } = await import("vite");
+      const vite = await createViteServer({
+        server: { middlewareMode: true },
+        appType: "spa",
+      });
+      app.use(vite.middlewares);
+      console.log("Vite middleware loaded");
+    } catch (e) {
+      console.warn("Vite not found or failed to load. Skipping Vite middleware.");
+    }
   } else {
     const distPath = path.join(process.cwd(), "dist");
     app.use(express.static(distPath));
@@ -314,5 +320,11 @@ async function startServer() {
   });
 }
 
-// Start the server
-startServer();
+// Start the server ONLY if this is the main module and not in a serverless environment
+const isServerless = !!process.env.NETLIFY || !!process.env.LAMBDA_TASK_ROOT || !!process.env.FUNCTIONS_EMULATOR;
+
+if (!isServerless && (import.meta.url === `file://${process.argv[1]}` || process.argv[1]?.endsWith('server.ts') || process.argv[1]?.endsWith('server.cjs'))) {
+  startServer().catch(err => {
+    console.error("Failed to start server:", err);
+  });
+}
