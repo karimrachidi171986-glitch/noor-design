@@ -78,6 +78,12 @@ export async function createExpressApp() {
   // Enable CORS
   app.use(cors());
 
+  // Detailed Request Logger
+  app.use((req, res, next) => {
+    console.log(`[${new Date().toISOString()}] ${req.method} ${req.path}`);
+    next();
+  });
+
   // Lazy load Stripe
   let stripe: Stripe | null = null;
   const getStripe = () => {
@@ -92,32 +98,31 @@ export async function createExpressApp() {
     }
     return stripe;
   };
-
   app.use(express.json());
   
-  // Sanitization Middleware
-  app.use((req, res, next) => {
-    if (req.body && req.path !== "/api/stripe-webhook") {
+  // Create API Router
+  const apiRouter = express.Router();
+
+  // Sanitization Middleware for the router
+  apiRouter.use((req, res, next) => {
+    if (req.body && req.path !== "/stripe-webhook") {
       req.body = sanitize(req.body);
     }
     next();
   });
   
-// Health check
-  app.get("/api/health", (req, res) => {
+  // Health check
+  apiRouter.get("/health", (req, res) => {
     res.json({ 
       status: "ok", 
       mode: process.env.NETLIFY ? "serverless" : "standard",
-      storage: "supabase"
+      storage: "supabase",
+      time: new Date().toISOString()
     });
   });
 
-  // Serve static files if they exist (backward compatibility)
-  app.use("/uploads", express.static(path.join(process.cwd(), "public/uploads")));
-  app.use("/files", express.static(path.join(process.cwd(), "public/files")));
-
   // Admin Login
-  app.post("/api/login", (req, res) => {
+  apiRouter.post("/login", (req, res) => {
     try {
       const { username, password } = req.body;
       
@@ -141,12 +146,12 @@ export async function createExpressApp() {
   });
 
   // Admin Token Verification
-  app.get("/api/admin/verify", authenticateToken, (req: AuthRequest, res: Response) => {
-    res.json({ valid: true, user: req.user });
+  apiRouter.get("/admin/verify", authenticateToken, (req: AuthRequest, res: Response) => {
+    res.json({ valid: true, user: (req as any).user });
   });
 
   // Stripe Checkout
-  app.post("/api/create-checkout-session", async (req, res) => {
+  apiRouter.post("/create-checkout-session", async (req, res) => {
     const { productId, productName, productPrice, stlFilePath, category } = req.body;
     const stripeClient = getStripe();
 
@@ -216,7 +221,7 @@ export async function createExpressApp() {
     return data.access_token;
   };
 
-  app.post("/api/paypal/create-order", async (req, res) => {
+  apiRouter.post("/paypal/create-order", async (req, res) => {
     try {
       const { amount, currency_code, itemName } = req.body;
       const accessToken = await getPayPalAccessToken();
@@ -248,7 +253,7 @@ export async function createExpressApp() {
     }
   });
 
-  app.post("/api/paypal/capture-order", async (req, res) => {
+  apiRouter.post("/paypal/capture-order", async (req, res) => {
     try {
       const { orderID } = req.body;
       const accessToken = await getPayPalAccessToken();
@@ -267,6 +272,16 @@ export async function createExpressApp() {
       res.status(500).json({ error: error.message });
     }
   });
+
+  // Mount API Router
+  app.use("/api", apiRouter);
+  
+  // Also mount without /api prefix for Netlify functions if split
+  app.use("/.netlify/functions/api", apiRouter);
+
+  // Serve static files if they exist (backward compatibility)
+  app.use("/uploads", express.static(path.join(process.cwd(), "public/uploads")));
+  app.use("/files", express.static(path.join(process.cwd(), "public/files")));
 
 // In Express v4, use app.get('*', but in Express v5, you must use app.get('*all',
   

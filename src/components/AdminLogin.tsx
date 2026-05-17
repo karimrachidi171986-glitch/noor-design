@@ -34,8 +34,8 @@ export default function AdminLogin({ onLoginSuccess }: AdminLoginProps) {
         data = await response.json();
       } else {
         const text = await response.text();
-        console.error("La réponse n'est pas du JSON:", text);
-        throw new Error("Réponse serveur non valide (pas du JSON)");
+        console.error("Réponse non-JSON reçue de l'API:", text.substring(0, 200));
+        throw new Error(`API non configurée (Reçu: ${text.substring(0, 20) === '<!DOCTYPE html>' ? 'HTML' : 'Texte'})`);
       }
 
       if (response.ok) {
