@@ -268,6 +268,8 @@ export async function createExpressApp() {
     }
   });
 
+// In Express v4, use app.get('*', but in Express v5, you must use app.get('*all',
+  
   return app;
 }
 
@@ -275,27 +277,27 @@ async function startServer() {
   const app = await createExpressApp();
   const PORT = 3000;
 
+  // Vite middleware for development
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: "spa",
     });
     app.use(vite.middlewares);
+    console.log("Vite middleware loaded");
   } else {
     const distPath = path.join(process.cwd(), "dist");
     app.use(express.static(distPath));
     app.get("*", (req, res) => {
       res.sendFile(path.join(distPath, "index.html"));
     });
+    console.log("Production static serving loaded");
   }
 
   app.listen(PORT, "0.0.0.0", () => {
-    console.log(`Server running on http://localhost:${PORT}`);
+    console.log(`Server running on port ${PORT}`);
   });
 }
 
-const isLocal = !process.env.NETLIFY && !process.env.LAMBDA_TASK_ROOT;
-
-if (isLocal) {
-  startServer();
-}
+// Start the server
+startServer();
