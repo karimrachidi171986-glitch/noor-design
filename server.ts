@@ -62,10 +62,10 @@ export async function createExpressApp() {
     contentSecurityPolicy: {
       directives: {
         defaultSrc: ["'self'"],
-        scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'", "https://connect.facebook.net", "https://www.paypal.com", "https://www.googletagmanager.com", "https://js.stripe.com"],
+        scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'", "https://connect.facebook.net", "https://www.paypal.com", "https://www.googletagmanager.com", "https://js.stripe.com", "https://*.supabase.co"],
         styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
-        imgSrc: ["'self'", "data:", "https://www.facebook.com", "https://instagram.fcmn1-1.fna.fbcdn.net", "https://images.unsplash.com", "https://www.paypalobjects.com", "https://res.cloudinary.com"],
-        connectSrc: ["'self'", "https://www.paypal.com", "https://www.google-analytics.com", "https://stats.g.doubleclick.net", "https://api.stripe.com"],
+        imgSrc: ["'self'", "data:", "https://www.facebook.com", "https://instagram.fcmn1-1.fna.fbcdn.net", "https://images.unsplash.com", "https://www.paypalobjects.com", "https://res.cloudinary.com", "https://*.supabase.co"],
+        connectSrc: ["'self'", "https://www.paypal.com", "https://www.google-analytics.com", "https://stats.g.doubleclick.net", "https://api.stripe.com", "https://*.supabase.co", "wss://*.supabase.co"],
         fontSrc: ["'self'", "https://fonts.gstatic.com"],
         objectSrc: ["'none'"],
         upgradeInsecureRequests: [],
