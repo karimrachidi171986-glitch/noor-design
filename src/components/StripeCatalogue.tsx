@@ -21,19 +21,15 @@ interface StripeCatalogueProps {
 interface ProductCardProps {
   product: Product;
   isAdmin?: boolean;
-  onBuy: (p: Product) => void;
   onEdit: (p: Product) => void;
-  onDelete: (id: string) => void;
-  loadingId: string | null;
+  onDelete: (id: string | number) => void;
 }
 
 const ProductCard: React.FC<ProductCardProps> = ({ 
   product, 
   isAdmin, 
-  onBuy, 
   onEdit, 
   onDelete, 
-  loadingId 
 }) => {
   const [showPaymentOptions, setShowPaymentOptions] = useState(false);
   const [isStripeLoading, setIsStripeLoading] = useState(false);
@@ -142,7 +138,7 @@ const ProductCard: React.FC<ProductCardProps> = ({
     alert('❌ Erreur de paiement');
   };
 
-  const amountStr = product.price.replace(/[^0-9.]/g, '') || "20.00";
+  const amountStr = product.price.replace(',', '.').replace(/[^0-9.]/g, '') || "20.00";
 
   return (
     <motion.div
@@ -271,7 +267,6 @@ const ProductCard: React.FC<ProductCardProps> = ({
 export default function ProductCatalogue({ isAdmin }: StripeCatalogueProps) {
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
-  const [loadingId, setLoadingId] = useState<string | null>(null);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [uploadProgress, setUploadProgress] = useState(false);
   const [uploadMessage, setUploadMessage] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
@@ -323,58 +318,6 @@ export default function ProductCatalogue({ isAdmin }: StripeCatalogueProps) {
       return () => clearTimeout(timer);
     }
   }, [uploadMessage]);
-
-  const handleBuyNow = (product: Product) => {
-    const numericPrice = product.price.replace(/[^0-9.]/g, '');
-    const businessEmail = product.stripePriceId || 'karimrachidi171986@gmail.com'; 
-    const origin = window.location.origin;
-    
-    // Exact PayPal Business parameters requested
-    const paypalParams = {
-      cmd: '_xclick',
-      business: businessEmail,
-      item_name: product.name,
-      amount: numericPrice,
-      currency_code: 'EUR',
-      return: `${origin}/success.html`,
-      cancel_return: `${origin}/cancel.html`,
-      notify_url: `${origin}/api/ipn_listener`, 
-      charset: 'utf-8',
-      // Enhancement parameters to show both "Connect" and "Pay by Card" options
-      solution_type: 'Sole', 
-      landing_page: 'Billing',
-      lc: 'FR',
-      no_note: '1',
-      no_shipping: product.category === 'stl' ? '1' : '2'
-    };
-
-    // Constructing the real PayPal Business form
-    const form = document.createElement('form');
-    form.method = 'POST';
-    form.action = 'https://www.paypal.com/cgi-bin/webscr';
-    form.target = '_blank'; 
-    
-    Object.entries(paypalParams).forEach(([key, value]) => {
-      const input = document.createElement('input');
-      input.type = 'hidden';
-      input.name = key;
-      input.value = value;
-      form.appendChild(input);
-    });
-
-    document.body.appendChild(form);
-    
-    // Store product info for the success page to read after redirect
-    // Use localStorage instead of sessionStorage because PayPal return opens in a different session/tab context
-    localStorage.setItem('last_purchase', JSON.stringify({
-      name: product.name,
-      category: product.category,
-      downloadUrl: (product.category === 'stl' && product.name.toLowerCase().includes('aurora')) ? '/files/aurora.stl' : (product.stlFilePath || '')
-    }));
-
-    form.submit();
-    document.body.removeChild(form);
-  };
 
   const handleSTLUpload = async (e: React.ChangeEvent<HTMLInputElement>, productId: string | number) => {
     const file = e.target.files?.[0];
@@ -530,10 +473,8 @@ export default function ProductCatalogue({ isAdmin }: StripeCatalogueProps) {
                   key={product.id} 
                   product={product} 
                   isAdmin={isAdmin} 
-                  onBuy={handleBuyNow} 
                   onEdit={(p) => setEditingProduct(p)}
                   onDelete={handleDelete}
-                  loadingId={loadingId}
                 />
               ))}
             </AnimatePresence>
@@ -568,10 +509,8 @@ export default function ProductCatalogue({ isAdmin }: StripeCatalogueProps) {
                   key={product.id} 
                   product={product} 
                   isAdmin={isAdmin} 
-                  onBuy={handleBuyNow} 
                   onEdit={(p) => setEditingProduct(p)}
                   onDelete={handleDelete}
-                  loadingId={loadingId}
                 />
               ))}
             </AnimatePresence>
@@ -616,11 +555,7 @@ export default function ProductCatalogue({ isAdmin }: StripeCatalogueProps) {
               <form 
                 onSubmit={handleEditSave} 
                 className="grid grid-cols-1 md:grid-cols-2 gap-8"
-                enctype="multipart/form-data"
-                data-netlify="true"
-                name="product-form"
               >
-                <input type="hidden" name="form-name" value="product-form" />
                 <div className="col-span-2">
                   <label className="block text-[10px] font-bold tracking-widest uppercase text-noor-gold mb-3">Nom du produit</label>
                   <input

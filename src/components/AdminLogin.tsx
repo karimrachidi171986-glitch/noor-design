@@ -62,8 +62,7 @@ export default function AdminLogin({ onLoginSuccess }: AdminLoginProps) {
           <p className="text-xs text-noor-bronze/40 uppercase tracking-widest font-bold">Sécurisé par JWT</p>
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-6" data-netlify="true" name="admin-login">
-          <input type="hidden" name="form-name" value="admin-login" />
+        <form onSubmit={handleSubmit} className="space-y-6">
           <div>
             <label className="block text-[10px] font-bold text-noor-gold uppercase mb-2 tracking-widest">Utilisateur</label>
             <input 

@@ -2,33 +2,14 @@ import express, { Request, Response, NextFunction } from "express";
 import { createServer as createViteServer } from "vite";
 import path from "path";
 import Stripe from "stripe";
-import multer from "multer";
-import fs from "fs";
 import jwt from "jsonwebtoken";
 import bcrypt from "bcryptjs";
 import cors from "cors";
 import dotenv from "dotenv";
 import helmet from "helmet";
 import DOMPurify from "isomorphic-dompurify";
-import { v2 as cloudinary } from "cloudinary";
-import streamifier from "streamifier";
 
 dotenv.config();
-
-// Cloudinary Configuration
-const useCloudinary = process.env.CLOUDINARY_URL || (process.env.CLOUDINARY_CLOUD_NAME && process.env.CLOUDINARY_API_KEY && process.env.CLOUDINARY_API_SECRET);
-
-if (useCloudinary) {
-  if (process.env.CLOUDINARY_URL) {
-    // Already configured via URL
-  } else {
-    cloudinary.config({
-      cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
-      api_key: process.env.CLOUDINARY_API_KEY,
-      api_secret: process.env.CLOUDINARY_API_SECRET
-    });
-  }
-}
 
 // Sanitization helper
 const sanitize = (input: any, key?: string): any => {
@@ -73,58 +54,8 @@ const authenticateToken = (req: AuthRequest, res: Response, next: NextFunction) 
   });
 };
 
-const publicDir = path.join(process.cwd(), "public");
-// On Netlify, we can only safely write to /tmp
-const uploadDir = process.env.NETLIFY ? "/tmp/uploads" : path.join(publicDir, "uploads");
-const filesDir = process.env.NETLIFY ? "/tmp/files" : path.join(publicDir, "files");
-
-// Ensure upload directories exist safely
-const ensureDirectories = () => {
-  if (useCloudinary) return; // No need for local dirs if using Cloudinary
-  try {
-    [uploadDir, filesDir].forEach(dir => {
-      if (!fs.existsSync(dir)) {
-        fs.mkdirSync(dir, { recursive: true });
-      }
-    });
-  } catch (err) {
-    console.warn("Could not create/check directories, might be in a read-only environment:", err);
-  }
-};
-
-// Multer config
-// For Netlify/Cloudinary, we use memory storage
-const storage = useCloudinary ? multer.memoryStorage() : multer.diskStorage({
-  destination: (req, file, cb) => {
-    const isImage = file.mimetype.startsWith('image/');
-    cb(null, isImage ? uploadDir : filesDir);
-  },
-  filename: (req, file, cb) => {
-    const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);
-    cb(null, uniqueSuffix + "-" + file.originalname);
-  }
-});
-
-const imgFilter = (req: any, file: any, cb: any) => {
-  const allowedMimes = ["image/jpeg", "image/png", "image/jpg", "image/webp", "image/gif"];
-  if (allowedMimes.includes(file.mimetype)) {
-    cb(null, true);
-  } else {
-    cb(new Error("Format de fichier non supporté. Seuls JPG, PNG, WEBP et GIF sont acceptés."), false);
-  }
-};
-
-const uploadImg = multer({ 
-  storage,
-  fileFilter: imgFilter,
-  limits: { fileSize: 10 * 1024 * 1024 } // 10MB limit
-});
-
-const uploadFile = multer({ storage });
-
 export async function createExpressApp() {
   const app = express();
-  if (!useCloudinary) ensureDirectories();
   
   // Security Headers
   app.use(helmet({
@@ -172,18 +103,18 @@ export async function createExpressApp() {
     next();
   });
   
-  // Health check
+// Health check
   app.get("/api/health", (req, res) => {
     res.json({ 
       status: "ok", 
       mode: process.env.NETLIFY ? "serverless" : "standard",
-      storage: useCloudinary ? "cloudinary" : "local"
+      storage: "supabase"
     });
   });
 
-  // Serve uploads and files explicitly
-  app.use("/uploads", express.static(uploadDir));
-  app.use("/files", express.static(filesDir));
+  // Serve static files if they exist (backward compatibility)
+  app.use("/uploads", express.static(path.join(process.cwd(), "public/uploads")));
+  app.use("/files", express.static(path.join(process.cwd(), "public/files")));
 
   // Admin Login
   app.post("/api/login", (req, res) => {
@@ -197,87 +128,6 @@ export async function createExpressApp() {
     }
   });
 
-  // Image Upload Endpoint
-  app.post("/api/upload-image", authenticateToken, (req, res) => {
-    uploadImg.single("image")(req, res, async (err) => {
-      if (err) {
-        console.error("Multer upload error:", err);
-        return res.status(400).json({ error: err.message });
-      }
-
-      if (!req.file) {
-        return res.status(400).json({ error: "Aucune image téléchargée" });
-      }
-
-      if (useCloudinary) {
-        try {
-          const uploadFromBuffer = (fileBuffer: Buffer) => {
-            return new Promise((resolve, reject) => {
-              const uploadStream = cloudinary.uploader.upload_stream(
-                { folder: "noor-design/products" },
-                (error, result) => {
-                  if (error) reject(error);
-                  else resolve(result);
-                }
-              );
-              streamifier.createReadStream(fileBuffer).pipe(uploadStream);
-            });
-          };
-
-          const result: any = await uploadFromBuffer(req.file.buffer);
-          return res.json({ filePath: result.secure_url });
-        } catch (uploadErr: any) {
-          console.error("Cloudinary Error:", uploadErr);
-          return res.status(500).json({ error: "Erreur lors de l'envoi vers Cloudinary: " + uploadErr.message });
-        }
-      } else {
-        res.json({ filePath: `/uploads/${req.file.filename}` });
-      }
-    });
-  });
-
-  // STL/General File Upload
-  app.post("/api/upload-file", authenticateToken, (req, res) => {
-    uploadFile.single("file")(req, res, async (err) => {
-      if (err) return res.status(400).json({ error: err.message });
-      if (!req.file) return res.status(400).json({ error: "No file uploaded" });
-
-      if (useCloudinary) {
-        try {
-          const uploadFromBuffer = (fileBuffer: Buffer, fileName: string) => {
-            return new Promise((resolve, reject) => {
-              const uploadStream = cloudinary.uploader.upload_stream(
-                { 
-                  folder: "noor-design/files",
-                  resource_type: "raw", // important for non-image files
-                  public_id: fileName
-                },
-                (error, result) => {
-                  if (error) reject(error);
-                  else resolve(result);
-                }
-              );
-              streamifier.createReadStream(fileBuffer).pipe(uploadStream);
-            });
-          };
-
-          const result: any = await uploadFromBuffer(req.file.buffer, req.file.originalname);
-          return res.json({ filePath: result.secure_url });
-        } catch (uploadErr: any) {
-          console.error("Cloudinary Error (File):", uploadErr);
-          return res.status(500).json({ error: uploadErr.message });
-        }
-      } else {
-        res.json({ filePath: `/files/${req.file.filename}` });
-      }
-    });
-  });
-
-  // Backward compatibility alias for /api/upload-stl
-  app.post("/api/upload-stl", authenticateToken, (req, res) => {
-    res.redirect(307, "/api/upload-file");
-  });
-
   // Stripe Checkout
   app.post("/api/create-checkout-session", async (req, res) => {
     const { productId, productName, productPrice, stlFilePath, category } = req.body;
@@ -289,7 +139,7 @@ export async function createExpressApp() {
 
     try {
       const origin = req.headers.origin || "https://noordesign.ma";
-      const numericPrice = parseFloat(productPrice.replace(/[^0-9.]/g, '')) || 20.00;
+      const numericPrice = parseFloat(productPrice.replace(',', '.').replace(/[^0-9.]/g, '')) || 20.00;
       
       const session = await stripeClient.checkout.sessions.create({
         payment_method_types: ["card"],
