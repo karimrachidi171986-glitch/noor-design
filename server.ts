@@ -118,14 +118,31 @@ export async function createExpressApp() {
 
   // Admin Login
   app.post("/api/login", (req, res) => {
-    const { username, password } = req.body;
-    
-    if (username === "karim" && (password === "karimdoha@123" || (ADMIN_PASSWORD_HASH && bcrypt.compareSync(password, ADMIN_PASSWORD_HASH)))) {
-      const token = jwt.sign({ username }, JWT_SECRET, { expiresIn: '24h' });
-      return res.json({ token, message: "Login success" });
-    } else {
-      return res.status(401).json({ error: "Identifiants invalides" });
+    try {
+      const { username, password } = req.body;
+      
+      console.log(`Login attempt for user: ${username}`);
+      
+      const isValidUser = username === "karim";
+      const isValidPass = (password === "karimdoha@123" || (ADMIN_PASSWORD_HASH && bcrypt.compareSync(password, ADMIN_PASSWORD_HASH)));
+
+      if (isValidUser && isValidPass) {
+        const token = jwt.sign({ username }, JWT_SECRET, { expiresIn: '24h' });
+        console.log("Login success");
+        return res.json({ token, message: "Login success" });
+      } else {
+        console.log("Login failed: Invalid credentials");
+        return res.status(401).json({ error: "Identifiants invalides" });
+      }
+    } catch (error: any) {
+      console.error("Login error:", error);
+      return res.status(500).json({ error: "Erreur interne du serveur lors de la connexion" });
     }
+  });
+
+  // Admin Token Verification
+  app.get("/api/admin/verify", authenticateToken, (req: AuthRequest, res: Response) => {
+    res.json({ valid: true, user: req.user });
   });
 
   // Stripe Checkout

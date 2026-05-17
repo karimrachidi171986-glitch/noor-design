@@ -167,9 +167,11 @@ export default function App() {
           <ProductCatalogue isAdmin={isAdmin} />
         </div>
 
-        <div id="galerie">
-          <MediaGallery />
-        </div>
+        {isAdmin && (
+          <div id="galerie">
+            <MediaGallery />
+          </div>
+        )}
         
         <div id="about">
           <About />

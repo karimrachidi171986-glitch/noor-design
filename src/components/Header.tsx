@@ -96,7 +96,7 @@ export default function Header({ onBgChange, onLogoChange, currentLogo, isAdmin,
           <nav className="hidden lg:flex items-center gap-8">
             <NavLink href="/">Accueil</NavLink>
             <NavLink href="#catalogue">Catalogue</NavLink>
-            <NavLink href="#galerie">Galerie</NavLink>
+            {isAdmin && <NavLink href="#galerie">Galerie</NavLink>}
             <NavLink href="#about">À propos</NavLink>
             <NavLink href="#contact">Contact</NavLink>
           </nav>

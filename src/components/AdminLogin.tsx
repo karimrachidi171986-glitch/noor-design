@@ -18,7 +18,7 @@ export default function AdminLogin({ onLoginSuccess }: AdminLoginProps) {
     setError('');
 
     try {
-      console.log("Tentative de connexion au service d'authentification...");
+      console.log("Tentative de connexion à /api/login...");
       // Using the Express API endpoint
       const response = await fetch('/api/login', {
         method: 'POST',
@@ -28,7 +28,15 @@ export default function AdminLogin({ onLoginSuccess }: AdminLoginProps) {
 
       console.log("Réponse reçue, statut:", response.status);
       
-      const data = await response.json();
+      let data;
+      const contentType = response.headers.get("content-type");
+      if (contentType && contentType.indexOf("application/json") !== -1) {
+        data = await response.json();
+      } else {
+        const text = await response.text();
+        console.error("La réponse n'est pas du JSON:", text);
+        throw new Error("Réponse serveur non valide (pas du JSON)");
+      }
 
       if (response.ok) {
         setAuthToken(data.token);
@@ -42,9 +50,11 @@ export default function AdminLogin({ onLoginSuccess }: AdminLoginProps) {
           setError(data.error || `Erreur ${response.status}`);
         }
       }
-    } catch (err) {
-      console.error("Erreur réseau ou serveur détaillée:", err);
-      setError('Impossible de contacter le serveur');
+    } catch (err: any) {
+      console.error("Erreur détaillée lors de la connexion:", err);
+      setError(err.message === "Réponse serveur non valide (pas du JSON)" 
+        ? "Erreur de configuration serveur (API non trouvée)" 
+        : 'Impossible de contacter le serveur');
     } finally {
       setLoading(false);
     }
